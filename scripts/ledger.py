@@ -48,10 +48,14 @@ P_LAMBDA_GBS = 0.0000166667
 P_LAMBDA_REQ_M = 0.20
 # fixed monthly floor for the few-domain regime (assumed list prices, on-demand)
 URL_ROW_BYTES = 120               # assumed: frontier row (host, url_hash, url, priority, timestamps)
+CH_REPLICATION = 2                # assumed: production ClickHouse keeps two replicas of each part
 FIXED_MANY = {                    # assumed list prices, on-demand, many-domain regime
-    "ClickHouse i4i.4xlarge × 6 (ingest 3,858 rows/s, 25 TB/month)": 1.373 * 720 * 6,
+    "ClickHouse m6g.4xlarge × 6, EBS-backed (3 shards × 2 replicas)": 0.616 * 720 * 6,
     "Aurora PostgreSQL r6g.2xlarge × 2 (control plane + frontier)": 1.038 * 720 * 2,
-    "ElastiCache cache.r7g.xlarge × 4 (frontier buckets + cache)": 0.44 * 720 * 4,
+    "Aurora I/O for frontier refills and released_at updates": 2_500.0,
+    "ElastiCache cache.r7g.xlarge × 4 (back queues, buckets, read cache)": 0.44 * 720 * 4,
+    "Ingest sort and dedup join (EMR, once per batch)": 500.0,
+    "Cross-AZ replication traffic, ClickHouse + Aurora": 500.0,
     "Read API 3 × Fargate tasks + CloudFront": 300.0,
     "Managed Prometheus/Grafana + CloudWatch": 300.0,
 }
@@ -89,21 +93,26 @@ def s3_stock_bill(gb_per_month: float, months: int) -> float:
 
 
 def ch_stock_bill(gb_per_month: float, months: int, hot: int = 3) -> float:
-    return sum(gb_per_month * (P_GP3_GB if age <= hot else P_S3_STD) for age in range(1, months + 1))
+    """Hot tier on gp3 with CH_REPLICATION copies; cold tier on S3-backed storage (S3 handles redundancy)."""
+    return sum(
+        gb_per_month * (P_GP3_GB * CH_REPLICATION if age <= hot else P_S3_STD)
+        for age in range(1, months + 1)
+    )
 
 
 def many_domain() -> list[Row]:
     rate = URLS / MONTH_S
     cpu_s = CPU_MS / 1000 * PROD_FACTOR
     cores = rate * cpu_s
-    inst = cores / VCPU_PER_INSTANCE
-    core_h = cores * 24 * 30
+    inst = cores / VCPU_PER_INSTANCE               # at 100% utilisation
+    deployed = round(inst / UTIL_TARGET)           # what is actually run and billed
+    core_h = deployed * VCPU_PER_INSTANCE * 24 * 30
     wire_kb = HTML_KB / COMPRESSION
     raw_gb = URLS * wire_kb * 1e3 / 1e9
     meta_gb = URLS * META_KB * 1e3 / 1e9 / META_COMPRESSION
     put_batched = URLS / PAGES_PER_OBJECT * P_S3_PUT
     nat = raw_gb * P_NAT_GB
-    ipv4 = inst * P_IPV4_H * 720
+    ipv4 = deployed * P_IPV4_H * 720
     sqs = URLS * 3 / 10 / 1e6 * P_SQS_M
     compute = core_h * P_CORE_H
     per_m = {
@@ -129,35 +138,35 @@ def many_domain() -> list[Row]:
         Row("N-05", "CPU per page (dev)", f"{CPU_MS} ms", "measured", f"parse {PARSE_MS:.0f} + topics {TOPICS_MS:.1f} = {PARSE_MS+TOPICS_MS:.1f}, rounded; n=5 per fixture; Apple M4"),
         Row("N-05b", "CPU per page (production)", f"{cpu_s*1000:.0f} ms", "assumed", f"{PROD_FACTOR}× N-05; PoC Phase 0 validates"),
         Row("N-06", "Cores", f"{cores:,.0f}", "derived", "N-01 × N-05b"),
-        Row("N-07", "Instances (16 vCPU) at 100% / 70%", f"{inst:,.0f} / {inst/UTIL_TARGET:,.0f}", "derived", "N-06 / 16; / 0.7"),
-        Row("N-08", "Core-hours per month / per M URLs", f"{core_h:,.0f} / {core_h/10_000:,.0f}", "derived", "N-06 × 720; / 10,000"),
+        Row("N-07", "Instances (16 vCPU) at 100% / deployed at 70%", f"{inst:,.0f} / {deployed:,.0f}", "derived", "N-06 / 16; / 0.7, rounded"),
+        Row("N-08", "Billed core-hours per month / per M URLs", f"{core_h:,.0f} / {core_h/10_000:,.0f}", "derived", "deployed instances × 16 × 720; / 10,000"),
         Row("N-09", "Compute per month / per M", f"{money(compute)} / {money(compute/10_000)}", "derived", f"N-08 × ${P_CORE_H}/core-h (spot Graviton, assumed)"),
         Row("N-10", "Metadata record", f"{META_KB} KB", "measured → assumed", "compact JSON of docs/samples: 9,609 B (Amazon), 6,064 B (CNN); n=2; 10 KB rounds up"),
         Row("N-10b", "Metadata per month raw / compressed", f"{URLS*META_KB*1e3/1e12:,.0f} TB / {meta_gb/1000:,.0f} TB", "derived", f"N-00 × N-10; / {META_COMPRESSION:.0f}:1 (assumed)"),
         Row("N-11", "Raw HTML stored per month", f"{raw_gb/1000:,.0f} TB", "derived", "N-00 × N-04b"),
         Row("N-11b", "Raw HTML uncompressed per month", f"{URLS*HTML_KB*1e3/1e15:.1f} PB", "derived", "N-00 × N-03"),
         Row("N-12", "Raw S3 bill at 1 / 12 / 24 months", f"{money(s3_stock_bill(raw_gb,1))} / {money(s3_stock_bill(raw_gb,12))} / {money(s3_stock_bill(raw_gb,24))} per month", "derived", "Standard age 1, IA ages 2–3, Deep Archive after; prices assumed"),
-        Row("N-13", "ClickHouse storage at 1 / 12 / 24 months", f"{money(ch_stock_bill(meta_gb,1))} / {money(ch_stock_bill(meta_gb,12))} / {money(ch_stock_bill(meta_gb,24))} per month", "derived", "gp3 for 3 months, S3-backed tier after; prices assumed"),
+        Row("N-13", "ClickHouse storage at 1 / 12 / 24 months (hot tier × 2 replicas)", f"{money(ch_stock_bill(meta_gb,1))} / {money(ch_stock_bill(meta_gb,12))} / {money(ch_stock_bill(meta_gb,24))} per month", "derived", "gp3 × 2 replicas for 3 months, S3-backed tier after; prices assumed"),
         Row("N-14", "S3 PUT, one object per page", f"{money(URLS*P_S3_PUT)}/mo; {rate:,.0f} PUT/s", "derived", "N-00 × $0.005/1,000"),
-        Row("N-14b", "S3 PUT, batched", f"{money(put_batched)}/mo; {rate/PAGES_PER_OBJECT:.1f} PUT/s; {wire_kb*PAGES_PER_OBJECT/1000:.0f} MB objects", "derived", f"N-00 / {PAGES_PER_OBJECT} × $0.005/1,000"),
+        Row("N-14b", "S3 PUT, packed 1,000 pages per (worker, minute) object", f"{money(put_batched)}/mo; {rate/PAGES_PER_OBJECT:.1f} PUT/s; {wire_kb*PAGES_PER_OBJECT/1000:.0f} MB objects", "derived", f"N-00 / {PAGES_PER_OBJECT} × $0.005/1,000"),
         Row("N-15", "NAT Gateway processing", f"{money(nat)}/mo", "derived", "N-11 × $0.045/GB (wire bytes)"),
         Row("N-15a", "NAT if bytes were uncompressed", f"{money(URLS*HTML_KB*1e3/1e9*P_NAT_GB)}/mo", "derived", "N-11b × $0.045/GB — shows the weight of N-04"),
-        Row("N-15b", "Public IPv4 instead of NAT", f"{money(ipv4)}/mo", "derived", "N-07 × $0.005/h × 720"),
+        Row("N-15b", "Public IPv4 instead of NAT", f"{money(ipv4)}/mo", "derived", "deployed instances × $0.005/h × 720"),
         Row("N-16", "SQS", f"{money(sqs)}/mo batched; {money(sqs*10)} unbatched", "derived", "3 requests/URL / 10 × $0.40/M"),
-        Row("N-17", "Dedup saving at 60% unchanged", f"{money(compute*DEDUP_UNCHANGED)}/mo compute + {money(put_batched*DEDUP_UNCHANGED)} PUT", "derived", "0.6 × N-09; 0.6 × N-14b; 60% assumed"),
+        Row("N-17", "Dedup saving at 60% unchanged (upper bound)", f"{money(compute*DEDUP_UNCHANGED)}/mo compute + {money(put_batched*DEDUP_UNCHANGED)} PUT", "derived", "0.6 × N-09; 0.6 × N-14b; 60% assumed; fleet shrinks in proportion"),
         Row("N-18", "Bloom 1% FPR false duplicates", f"{URLS*0.01/1e6:,.0f}M URLs/mo", "derived", "0.01 × N-00"),
         Row("N-20", "Read traffic mean / 2× peak / store misses", f"{reads_s:,.0f}/s / {2*reads_s:,.0f}/s / {reads_s*(1-CACHE_HIT):,.1f}/s", "assumed→derived", "10M/day; × 2; × (1 − 0.9 hit)"),
         Row("N-21", "DynamoDB full replica writes", f"{money(URLS*META_KB*P_DDB_WRU_M/1e6)}/mo", "derived", "N-00 × 10 WRU (10 KB / 1 KB) × $1.25/M"),
         Row("N-21b", "DynamoDB replica storage", f"{money(URLS*META_KB*1e3/1e9*P_DDB_GB)}/mo, accumulating", "derived", "100 TB × $0.25/GB"),
         Row("N-24", "Per million URLs (NAT) / (public IPv4)", f"{money(total_nat)} / {money(total_ipv4)}", "derived", " + ".join(f"{k} {v:.2f}" for k, v in per_m.items())),
-        Row("N-24e", "Fixed infrastructure, many-domain", money(sum(FIXED_MANY.values())) + "/mo", "assumed", "; ".join(f"{k} {money(v)}" for k, v in FIXED_MANY.items())),
+        Row("N-24e", "Fixed infrastructure, many-domain (incl. Aurora I/O, ingest, cross-AZ)", money(sum(FIXED_MANY.values())) + "/mo", "assumed", "; ".join(f"{k} {money(v)}" for k, v in FIXED_MANY.items())),
         Row("N-29", "Frontier table (10e9 rows)", f"{URLS*URL_ROW_BYTES/1e12:.1f} TB; {money(URLS*URL_ROW_BYTES/1e9*0.10)}/mo", "derived", "N-00 × 120 B (assumed) ; × $0.10/GB-mo Aurora storage (assumed)"),
         Row("N-24f", "Total month 1 / per M all lines month 1", f"{money(flat+s3_stock_bill(raw_gb,1)+ch_stock_bill(meta_gb,1))} / {money((flat+s3_stock_bill(raw_gb,1)+ch_stock_bill(meta_gb,1))/10_000)}", "derived", "N-24c flat + N-12 + N-13 at month 1; / 10,000"),
         Row("N-24g", "Variable flat lines (compute + PUT + IPv4 + SQS)", money(compute + put_batched + ipv4 + sqs), "derived", "N-09 + N-14b + N-15b + N-16"),
         Row("N-24c", "Flat lines / total at 12 / 24 months", f"{money(flat)} / {money(flat+s3_stock_bill(raw_gb,12)+ch_stock_bill(meta_gb,12))} / {money(flat+s3_stock_bill(raw_gb,24)+ch_stock_bill(meta_gb,24))}", "derived", "compute + PUT + IPv4 + SQS + N-24e + N-29; + N-12 + N-13 at 12 / 24 months"),
         Row("N-24d", "IPv4 per M / KV summary tier", f"{money(ipv4/10_000)} / {money(URLS*1*P_DDB_WRU_M/1e6)}", "derived", "N-15b / 10,000; N-00 × 1 WRU × $1.25/M"),
         Row("N-25", "Memory per process / per instance", f"{PROC_RSS_MB} MB / {PROC_RSS_MB*VCPU_PER_INSTANCE/1000:.1f} GB", "measured→derived", "RSS 352–379 MB after one parse, n=1 each; × 16"),
-        Row("N-26", "In-flight fetches total / per instance", f"{rate*FETCH_LATENCY_S:,.0f} / {rate*FETCH_LATENCY_S/inst:.0f}", "derived", "N-01 × 2 s (assumed latency); / N-07"),
+        Row("N-26", "In-flight fetches total / per deployed instance", f"{rate*FETCH_LATENCY_S:,.0f} / {rate*FETCH_LATENCY_S/deployed:.0f}", "derived", "N-01 × 2 s (assumed latency); / deployed instances"),
         Row("N-27", "Lambda comparison", f"{money(lam)}/mo", "derived", "N-00 × N-05b × 0.5 GB × $0.0000166667 + N-00 × $0.20/M"),
         Row("N-28", "Ingest file size", f"{URLS*URL_BYTES/1e9:,.0f} GB", "derived", "N-00 × 80 B (assumed URL length)"),
     ]
@@ -209,6 +218,12 @@ def main() -> int:
     if "--check" in sys.argv:
         return check(sys.argv[sys.argv.index("--check") + 1])
     rows = few_domain() if "--regime" in sys.argv and "few" in sys.argv else many_domain()
+    if "--compact" in sys.argv:  # for the document appendix: the working stays in this file
+        print("| ID | Quantity | Value | Label |")
+        print("|---|---|---|---|")
+        for r in rows:
+            print(f"| {r.id} | {r.quantity} | {r.value} | {r.label} |")
+        return 0
     print("| ID | Quantity | Value | Label | Inputs / working |")
     print("|---|---|---|---|---|")
     for r in rows:

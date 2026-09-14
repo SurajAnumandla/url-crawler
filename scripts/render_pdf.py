@@ -27,10 +27,10 @@ DOCS = {
     "docs/part3-poc-and-delivery.md": "deliverables/WebCrawler_poc_and_delivery.pdf",
 }
 CSS = """
-body { font: 10.5pt/1.45 -apple-system, Helvetica, Arial, sans-serif; color: #111; max-width: 190mm; margin: 0 auto; }
+body { font: 10pt/1.42 -apple-system, Helvetica, Arial, sans-serif; color: #111; max-width: 190mm; margin: 0 auto; }
 h1 { font-size: 20pt; margin: 0 0 4mm; } h2 { font-size: 14pt; margin-top: 9mm; border-bottom: 1px solid #999; padding-bottom: 1mm; }
 h3 { font-size: 11.5pt; margin-top: 6mm; }
-table { border-collapse: collapse; width: 100%; font-size: 9pt; margin: 3mm 0; }
+table { border-collapse: collapse; width: 100%; font-size: 8.5pt; margin: 2.5mm 0; }
 tr { page-break-inside: avoid; }
 th, td { border: 1px solid #bbb; padding: 1.2mm 2mm; vertical-align: top; text-align: left; }
 th { background: #eee; }
@@ -53,10 +53,19 @@ def chrome() -> str:
     raise SystemExit("No Chrome/Chromium found; set CHROME_BIN to the browser binary.")
 
 
+PDF_CUT = "## Appendix B"
+PDF_CUT_NOTE = (
+    "## Appendix B — The numbers\n\nThe full number ledger (every measured, assumed and derived "
+    "value with its working) is Appendix B of `docs/part2-scale-design.md` in the repository, "
+    "generated and checked by `scripts/ledger.py`. It is omitted from the PDF for length.\n"
+)
+
+
 def render(src: pathlib.Path, dst: pathlib.Path, browser: str) -> None:
-    html_body = markdown.markdown(
-        src.read_text(), extensions=["tables", "fenced_code", "sane_lists"]
-    )
+    text = src.read_text()
+    if PDF_CUT in text:
+        text = text[: text.index(PDF_CUT)] + PDF_CUT_NOTE
+    html_body = markdown.markdown(text, extensions=["tables", "fenced_code", "sane_lists"])
     page = (
         "<!doctype html><html><head><meta charset='utf-8'>"
         f"<style>{CSS}</style></head><body>{html_body}</body></html>"

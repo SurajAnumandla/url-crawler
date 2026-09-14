@@ -17,3 +17,7 @@ docs/brightedge-assignment-spec.md
 # working spec for the remediation pass
 docs/spec.md
 docs/plan.md
+
+# Firebase CLI local artefacts
+firebase-debug.log
+.firebase/
