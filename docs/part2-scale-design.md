@@ -202,7 +202,7 @@ Every worker writes one structured log event per fetch with the URL, reason, rob
 
 ## 8. What it costs
 
-Prices are public list prices for us-east-1 as recalled at writing; every figure below is an estimate to within about ±50% until the proof of concept replaces the assumptions with measurements. Exact arithmetic is in 
+Prices are public list prices for us-east-1 as recalled at writing; every figure below is an estimate to within about ±50% until the proof of concept replaces the assumptions with measurements. Exact arithmetic is in `docs/part2-numbers.md`.
 
 **Assumptions:** 10 billion URLs a month; 200 KB per page, compressing 5:1; 0.75 s of CPU per page on a server core; Graviton Spot at $0.02 per core-hour; 10 KB per metadata record; storage tiered with age.
 
