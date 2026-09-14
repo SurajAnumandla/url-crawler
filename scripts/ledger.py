@@ -50,7 +50,7 @@ P_EFS_GB = 0.30                   # rejected alternative in DR-12
 P_LAMBDA_GBS = 0.0000166667
 P_LAMBDA_REQ_M = 0.20
 # fixed monthly floor for the few-domain regime (assumed list prices, on-demand)
-URL_ROW_BYTES = 120               # assumed: frontier row (host, url_hash, url, priority, timestamps)
+URL_ROW_BYTES = 200               # assumed: frontier row incl. ~80 B URL, tuple header and index entries
 CH_REPLICATION = 2                # assumed: production ClickHouse keeps two replicas of each part
 FIXED_MANY = {                    # assumed list prices, on-demand, many-domain regime
     "ClickHouse m6g.4xlarge × 6, EBS-backed (3 shards × 2 replicas)": 0.616 * 720 * 6,
@@ -157,7 +157,7 @@ def many_domain() -> list[Row]:
         Row("N-12", "Raw S3 bill at 1 / 12 / 24 months", f"{money(s3_stock_bill(raw_gb,1))} / {money(s3_stock_bill(raw_gb,12))} / {money(s3_stock_bill(raw_gb,24))} per month", "derived", "Standard age 1, IA ages 2–3, Deep Archive after; prices assumed"),
         Row("N-13", "ClickHouse storage at 1 / 12 / 24 months (hot tier × 2 replicas)", f"{money(ch_stock_bill(meta_gb,1))} / {money(ch_stock_bill(meta_gb,12))} / {money(ch_stock_bill(meta_gb,24))} per month", "derived", "gp3 × 2 replicas for 3 months, S3-backed tier after; prices assumed"),
         Row("N-14", "S3 PUT, one object per page", f"{money(URLS*P_S3_PUT)}/mo; {rate:,.0f} PUT/s", "derived", "N-00 × $0.005/1,000"),
-        Row("N-14b", "S3 PUT, packed 1,000 pages per (worker, minute) object", f"{money(put_batched)}/mo; {rate/PAGES_PER_OBJECT:.1f} PUT/s; {wire_kb*PAGES_PER_OBJECT/1000:.0f} MB objects", "derived", f"N-00 / {PAGES_PER_OBJECT} × $0.005/1,000"),
+        Row("N-14b", "S3 PUT, packed 1,000 pages per (server, minute) object", f"{money(put_batched)}/mo; {rate/PAGES_PER_OBJECT:.1f} PUT/s; {wire_kb*PAGES_PER_OBJECT/1000:.0f} MB objects", "derived", f"N-00 / {PAGES_PER_OBJECT} × $0.005/1,000"),
         Row("N-15", "NAT Gateway processing", f"{money(nat)}/mo", "derived", "N-11 × $0.045/GB (wire bytes)"),
         Row("N-15a", "NAT if bytes were uncompressed", f"{money(URLS*HTML_KB*1e3/1e9*P_NAT_GB)}/mo", "derived", "N-11b × $0.045/GB — shows the weight of N-04"),
         Row("N-15b", "Public IPv4 instead of NAT", f"{money(ipv4)}/mo", "derived", "deployed instances × $0.005/h × 720"),
@@ -169,7 +169,7 @@ def many_domain() -> list[Row]:
         Row("N-21b", "DynamoDB replica storage", f"{money(URLS*META_KB*1e3/1e9*P_DDB_GB)}/mo, accumulating", "derived", "100 TB × $0.25/GB"),
         Row("N-24", "Per million URLs (NAT) / (public IPv4)", f"{money(total_nat)} / {money(total_ipv4)}", "derived", " + ".join(f"{k} {v:.2f}" for k, v in per_m.items())),
         Row("N-24e", "Fixed infrastructure, many-domain (incl. Aurora I/O, ingest, cross-AZ)", money(sum(FIXED_MANY.values())) + "/mo", "assumed", "; ".join(f"{k} {money(v)}" for k, v in FIXED_MANY.items())),
-        Row("N-29", "Frontier table (10e9 rows)", f"{URLS*URL_ROW_BYTES/1e12:.1f} TB; {money(URLS*URL_ROW_BYTES/1e9*0.10)}/mo", "derived", "N-00 × 120 B (assumed) ; × $0.10/GB-mo Aurora storage (assumed)"),
+        Row("N-29", "Frontier table (10e9 rows)", f"{URLS*URL_ROW_BYTES/1e12:.1f} TB; {money(URLS*URL_ROW_BYTES/1e9*0.10)}/mo", "derived", "N-00 × 200 B (assumed) ; × $0.10/GB-mo Aurora storage (assumed)"),
         Row("N-24f", "Total month 1 / per M all lines month 1", f"{money(flat+s3_stock_bill(raw_gb,1)+ch_stock_bill(meta_gb,1))} / {money((flat+s3_stock_bill(raw_gb,1)+ch_stock_bill(meta_gb,1))/10_000)}", "derived", "N-24c flat + N-12 + N-13 at month 1; / 10,000"),
         Row("N-24g", "Variable flat lines (compute + PUT + IPv4 + SQS)", money(compute + put_batched + ipv4 + sqs), "derived", "N-09 + N-14b + N-15b + N-16"),
         Row("N-24h", "Egress + queue + object writes", money(ipv4 + sqs + put_batched), "derived", "N-15b + N-16 + N-14b"),

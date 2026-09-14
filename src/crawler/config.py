@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     max_bytes: int = 20_000_000
 
     # politeness
-    user_agent: str = "Mozilla/5.0 (compatible; CrawlerBot/0.1; +https://example.com/bot)"
+    user_agent: str = "Mozilla/5.0 (compatible; URLCrawlerBot/0.1; +https://url-crawler.web.app/home)"
     respect_robots: bool = True
     robots_cache_size: int = 10_000            # origins kept per process (LRU)
     robots_cache_ttl_seconds: float = 86_400   # re-read a robots.txt daily

@@ -82,7 +82,7 @@ Class: **known** means the method is settled and only effort remains; **risky** 
 | 1 | Legal position on crawling hosts that disallow it, and on probing with a browser User-Agent | risky | entry gate for phase 0; owner named before day one | a written position from counsel before any probe |
 | 2 | Anti-bot blocking on the target hosts, including blocks disguised as maintenance pages | risky | measured week 1; decision week 2 | the customer decides: accept the coverage ceiling, or negotiate access |
 | 3 | The request rate each host will accept | risky | measured week 1; negotiation open-ended | anything above the probed rate is a commercial agreement |
-| 4 | Spot capacity quota (Run B needs about 800 cores; production about 4,000) | known, external | filed day 1; days to weeks | quota request; run smaller until granted |
+| 4 | Spot capacity quota (Run B may use up to 70 servers, about 1,100 cores; production about 4,100) | known, external | filed day 1; days to weeks | quota request; run smaller until granted |
 | 5 | Customer MySQL access: replica, network path, credentials | known, external | week 1 | customer provisions; ingest from file until then |
 | 6 | PoC infrastructure budget (about $15–20k over ten weeks at list prices) | known, external | before phase 1 | approval by the budget owner named at the phase-0 gate |
 | 7 | Security review of a fleet with public egress addresses | known, external | before phase 2 | request filed in week 1 |
@@ -99,7 +99,7 @@ Class: **known** means the method is settled and only effort remains; **risky** 
 | 13 | Extraction and topic quality | risky | week 6 | the labelled sample in §2 |
 | 14 | ClickHouse insert behaviour at the production rate | risky | week 5 | synthetic inserter; decides whether ClickHouse or a managed alternative ships |
 | 15 | Single-URL lookup latency under inserts | risky | week 7 | load test; decides whether the summary tier is added |
-| 16 | Frontier refill latency at a million hosts | risky | week 5 | synthetic frontier; falls back to pre-built queue heads |
+| 16 | Frontier refill latency at a million hosts on a 2 TB table | risky | week 5 | synthetic frontier; falls back to pre-built queue heads |
 
 **Built by the PoC.** Known work; the estimates are assumptions until phase 1 ends.
 
@@ -121,7 +121,7 @@ Ten weeks, five phases. Each phase de-risks something named and ends at a gate t
 |---|---|---|---|
 | 0 — Measure | 1 | Run A sample of 10,000 pages: page sizes, block rate, JavaScript share, rate probes; parse cost on the real server; cost estimate re-run | blockers 2, 3, 8, 9, 11 |
 | 1 — Pipeline | 2–3 | ingest from file and MySQL, frontier and queues, transport, worker fleet, object packing, ClickHouse schema; one region, fixed fleet size | blockers 17–22; that the parts fit together |
-| 2 — Scale runs | 4–6 | Run A in full, two cycles; Run B; the synthetic loads; insert tuning; monitoring wired | blockers 10, 12, 14, 16, 23 |
+| 2 — Scale runs | 4–6 | Run A in full, two cycles; Run B; the synthetic loads; insert tuning; the labelled sample; monitoring wired | blockers 10, 12, 13, 14, 16, 23 |
 | 3 — Serving | 7 | read API, cache, CDN; lookup and report queries; load test | blocker 15 |
 | 4 — Hardening | 8–10 | autoscaling, failure injection, runbooks, alert review, canary path, on-call | operability by people who did not build it |
 
@@ -156,7 +156,7 @@ Three assumptions would move the whole table: that the Part 1 extractor's qualit
 
 | Stage | Share | Duration | Proceed when |
 |---|---|---|---|
-| Canary | at most 10% of every host's budget on the new fleet | 48 hours | error rate under 1%, parse failures under 5%, block rate per host within PoC bounds, no paging alert |
+| Canary | at most 10% of every host's budget on the new fleet | 48 hours | error rate under 1% counting transient errors before retry (the 0.5% objective in Part 2 §6 counts permanent errors after retries), parse failures under 5%, block rate per host within PoC bounds, no paging alert |
 | Limited | 10% of the batch, all hosts | 1 week | unit costs within 20% of the estimate; objectives met |
 | Broad | 50% | 1 week | objectives met; no manual intervention |
 | Full | 100% | | error budget on plan |

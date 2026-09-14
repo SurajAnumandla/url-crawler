@@ -27,7 +27,7 @@ Labels: **measured** (where and how), **assumed** (why this value), **derived** 
 | N-12 | Raw S3 bill at 1 / 12 / 24 months | $9,200 / $23,000 / $28,000 per month | derived |
 | N-13 | ClickHouse storage at 1 / 12 / 24 months (hot tier × 2 replicas) | $4,000 / $17,000 / $24,000 per month | derived |
 | N-14 | S3 PUT, one object per page | $50,000/mo; 3,858 PUT/s | derived |
-| N-14b | S3 PUT, packed 1,000 pages per (worker, minute) object | $50/mo; 3.9 PUT/s; 40 MB objects | derived |
+| N-14b | S3 PUT, packed 1,000 pages per (server, minute) object | $50/mo; 3.9 PUT/s; 40 MB objects | derived |
 | N-15 | NAT Gateway processing | $18,000/mo | derived |
 | N-15a | NAT if bytes were uncompressed | $90,000/mo | derived |
 | N-15b | Public IPv4 instead of NAT | $930/mo | derived |
@@ -39,8 +39,8 @@ Labels: **measured** (where and how), **assumed** (why this value), **derived** 
 | N-21b | DynamoDB replica storage | $25,000/mo, accumulating | derived |
 | N-24 | Per million URLs (NAT) / (public IPv4) | $9.0 / $7.3 | derived |
 | N-24e | Fixed infrastructure, many-domain (incl. Aurora I/O, ingest, cross-AZ) | $9,500/mo | assumed |
-| N-29 | Frontier table (10e9 rows) | 1.2 TB; $120/mo | derived |
-| N-24f | Total month 1 / per M all lines month 1 | $84,000 / $8.4 | derived |
+| N-29 | Frontier table (10e9 rows) | 2.0 TB; $200/mo | derived |
+| N-24f | Total month 1 / per M all lines month 1 | $85,000 / $8.5 | derived |
 | N-24g | Variable flat lines (compute + PUT + IPv4 + SQS) | $62,000 | derived |
 | N-24h | Egress + queue + object writes | $2,200 | derived |
 | N-24c | Flat lines / total at 12 / 24 months | $71,000 / $110,000 / $120,000 | derived |

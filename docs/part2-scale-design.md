@@ -11,7 +11,7 @@ Two facts shape the design:
 - **The shape of the list decides the limit.** Billions of URLs spread over a million websites are limited by CPU for parsing, so the design is about fleet size. Billions concentrated on three websites, as in the brief's example, are limited by how fast those sites tolerate being fetched, and no fleet size changes that; the design is then about choosing which fraction of the list to spend the budget on.
 - **The parse is the cost.** Fetching waits on the network; reading a page costs half a second of CPU. Every cost lever here parses fewer pages or parses them cheaper.
 
-Rounded estimates at 10 billion URLs a month over many sites: about 260 servers, about $84,000 a month at first and about $120,000 by the second year as storage accumulates, roughly $8.4 per million URLs. For the three-site example the same machinery runs on two servers on a floor of about $2,000 a month and fetches about 78 million pages a month per site until the sites agree to more. All figures are back-of-envelope, rounded to two figures and good to about ±50% until the proof of concept measures page size, parse cost and how often pages change. Calculations are shown where they are used.
+Rounded estimates at 10 billion URLs a month over many sites: about 260 servers, about $84,000 a month at first and about $120,000 by the second year as storage accumulates, roughly $8.4 per million URLs. For the three-site example the same machinery runs on two servers on a floor of about $2,000 a month and fetches about 78 million pages a month across the three sites until they agree to more. All figures are back-of-envelope, rounded to two figures and good to about ±50% until the proof of concept measures page size, parse cost and how often pages change. Calculations are shown where they are used.
 
 ## 1. What the brief asks for
 
@@ -40,11 +40,11 @@ Planning volume: 10 billion URLs a month, an assumed upper case; at 2 billion, d
 | Fetches per second, sustained | 10 billion ÷ (30 days × 86,400 s) | ~3,900 /s |
 | CPU per page | 0.5 s measured on a laptop (two large fixture pages, five runs each) × 1.5 for a slower server core | 0.75 s, assumed |
 | Cores needed | 3,900 /s × 0.75 s | ~2,900 |
-| Servers deployed | 2,900 ÷ 16 cores ÷ 70% utilisation (headroom) | ~260 of 16 cores |
+| Servers deployed | 2,900 ÷ 16 cores ÷ 70% utilisation (headroom) | 258 of 16 cores, about 260 |
 | Fetches in flight | 3,900 /s × 2 s per fetch, assumed | ~7,700; ~30 per server |
 | Raw HTML stored per month | 10 billion × 200 KB (assumed) ÷ 5 (compression, measured) | ~400 TB |
 | Metadata and body stored per month | 10 billion × 10 KB (measured) ÷ 4 (assumed) | ~25 TB |
-| Frontier table | 10 billion rows × ~120 bytes | ~1.2 TB |
+| Frontier table | 10 billion rows × ~200 bytes (URL, hash, weight, dates, index entries) | ~2 TB |
 
 The least certain number is page size. The two fixture pages are 1.6 MB and 5.6 MB, far above the 200 KB planning value, and if the real average is 1 MB then storage and bandwidth are five times larger. The second least certain is parse cost on the real server. Both are the first things the proof of concept measures.
 
@@ -80,7 +80,7 @@ Memory is not a constraint: a worker process uses about 400 MB after a parse, so
 
 ### 4.2 The frontier
 
-The frontier is a table in Aurora PostgreSQL, partitioned by host, with one row per waiting URL: host, URL hash, the customer's weight, when it is next due, and when it was last released. About 1.2 TB for 10 billion rows.
+The frontier is a table in Aurora PostgreSQL, partitioned by host, with one row per waiting URL: host, URL and its hash, the customer's weight, when it is next due, and when it was last released. About 2 TB for 10 billion rows.
 
 A table rather than a queue because the fetch order changes over time: a page that changed last time should come back sooner, one that has not changed in months can wait. A queue is fixed once written; a table makes the order a query, "for this host, the URLs that are due, most valuable first". The due date is written once per fetch, so nothing is rewritten in bulk.
 
@@ -106,7 +106,7 @@ Three kinds of data, three stores, chosen by access pattern.
 | Metadata and extracted body | scanned by host and month; looked up by URL | ClickHouse, two tables (below) |
 | Frontier, hosts, rate policies | transactional | Aurora PostgreSQL |
 
-Raw HTML is kept so the extractor can be re-run when it improves, which is far cheaper than fetching again. Each worker packs the pages it fetches into one object per minute; a page is addressed by object key, offset and length. Packing matters: one object per page would be 3,900 writes a second and about $50,000 a month in request charges alone; packed, it is a few writes a second and about $50.
+Raw HTML is kept so the extractor can be re-run when it improves, which is far cheaper than fetching again. Each server packs the pages its processes fetch into one object per minute; a page is addressed by object key, offset and length. Packing matters: one object per page would be 3,900 writes a second and about $50,000 a month in request charges alone; packed, it is a few writes a second and about $50.
 
 **Unified schema.** One table holds every page type; product-specific fields such as price or SKU go in a key-value column rather than separate tables. The important columns:
 
@@ -210,9 +210,9 @@ Prices are public list prices for us-east-1 as recalled at writing; every figure
 
 | Line | Calculation | Per month |
 |---|---|---|
-| Worker fleet | 260 servers × 16 cores × 720 h × $0.02 per Spot core-hour | ~$59,000 |
+| Worker fleet | 258 servers × 16 cores × 720 h × $0.02 per Spot core-hour | ~$59,000 |
 | Databases, caches, ingest, API, monitoring | ClickHouse 6 nodes with two replicas, Aurora with its I/O, Redis, ingest job, API, monitoring, at list prices | ~$9,500 |
-| Egress, queue, object writes | 260 public IPs × $0.005/h ($930); 3 queue requests per URL, batched ($1,200); 1,000 pages per object write ($50) | ~$2,200 |
+| Egress, queue, object writes | 258 public IPs × $0.005/h ($930); 3 queue requests per URL, batched ($1,200); 1,000 pages per object write ($50) | ~$2,200 |
 | Raw HTML storage | 400 TB/month × $0.023/GB in the first month, tiered to cheaper classes with age | $9,200 in month 1; $28,000 by month 24 |
 | Metadata storage | 25 TB/month × 2 replicas × $0.08/GB hot for three months, then cold | $4,000 in month 1; $24,000 by month 24 |
 | **Total** | | **~$84,000 in month 1; ~$120,000 by month 24; about $8.4 per million URLs at the start** |
@@ -241,7 +241,7 @@ In the order that would change the design most if wrong:
 5. Block rate and JavaScript-only share per host; they set the coverage ceiling.
 6. ClickHouse at 3,900 inserts a second, and lookup latency under that load.
 7. Failover drills for Aurora, Redis and a ClickHouse replica under load.
-8. Frontier refill latency at a million hosts on a 1.2 TB table, and re-release after a Redis failover.
+8. Frontier refill latency at a million hosts on a 2 TB table, and re-release after a Redis failover.
 9. A fair column-store versus row-store comparison on real hardware before quoting any speed multiple.
 
 ## 10. Decisions and schema
@@ -277,7 +277,7 @@ CREATE TABLE page_fetch (
     published_date Nullable(DateTime), language LowCardinality(String), h1_headings Array(String),
     og_tags Map(String, String), twitter_tags Map(String, String),
     body String CODEC(ZSTD(3)), word_count UInt32,
-    page_type LowCardinality(String), topics Nested(topic String, rank_score Float32),
+    page_type LowCardinality(String), topics Nested(topic String, score Float32),
     s3_key String, s3_offset UInt32, s3_length UInt32,
     extractor_version LowCardinality(String), extra Map(String, String)
 ) ENGINE = MergeTree PARTITION BY toYYYYMMDD(fetched_at) ORDER BY (host, url_hash, fetched_at);
