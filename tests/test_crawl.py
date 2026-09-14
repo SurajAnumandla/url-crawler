@@ -177,3 +177,30 @@ async def test_no_content_page_is_an_error_not_a_success():
     assert result.reason == Reason.no_content
     assert result.http_status == 200
     assert result.title is None
+
+
+async def test_a_stage_that_raises_becomes_an_internal_error_result(monkeypatch):
+    """Whatever breaks inside, the caller gets a CrawlResult, never an exception."""
+    import crawler.service_crawl as crawl_mod
+
+    async def boom(url, client=None):
+        raise RuntimeError("stage exploded")
+
+    monkeypatch.setattr(crawl_mod, "check_robots", boom)
+    result = await crawl_url("https://x.test/p")
+    assert result.status == Status.error
+    assert result.reason == Reason.internal_error
+
+
+async def test_a_crawl_that_hangs_becomes_a_timeout_result(monkeypatch):
+    import asyncio
+
+    import crawler.service_crawl as crawl_mod
+
+    async def hang(url, client=None):
+        await asyncio.sleep(5)
+
+    monkeypatch.setattr(crawl_mod, "check_robots", hang)
+    monkeypatch.setattr(crawl_mod.settings, "total_timeout_seconds", 0.2)
+    result = await crawl_url("https://x.test/p")
+    assert (result.status, result.reason) == (Status.error, Reason.timeout)

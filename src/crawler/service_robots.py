@@ -76,7 +76,11 @@ async def _load(
         # Could not reach it at all — usually the host itself is down. Let the
         # page fetch report the real error instead of guessing.
         return RobotsState.unreachable, None
-    return None, Protego.parse(body.decode("utf-8", errors="replace"))
+    try:
+        return None, Protego.parse(body.decode("utf-8", errors="replace"))
+    except Exception:
+        # An unparseable robots.txt is treated like a missing one (RFC 9309: unrestricted).
+        return RobotsState.missing, None
 
 
 def _decide(url: str, state: RobotsState | None, rules: Protego | None) -> RobotsResult:

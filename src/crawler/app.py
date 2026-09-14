@@ -7,12 +7,12 @@ from datetime import UTC, datetime
 
 import httpx
 from fastapi import FastAPI, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
 from crawler import __version__
 from crawler.home import render_home
-from crawler.logging import setup_logging
-from crawler.model import CrawlResult
+from crawler.logging import log, setup_logging
+from crawler.model import CrawlResult, Reason, Status
 from crawler.service_crawl import crawl_url
 from crawler.service_download import make_client
 
@@ -53,6 +53,25 @@ async def root() -> RedirectResponse:
 async def not_found(request: Request, exc: HTTPException) -> Response:
     """A path that is not an endpoint sends the visitor to the landing page."""
     return RedirectResponse(url="/home", status_code=307)
+
+
+@app.exception_handler(Exception)
+async def unhandled(request: Request, exc: Exception) -> Response:
+    """The last line of defence: never a stack trace, always JSON.
+
+    crawl_url already catches everything, so this covers bugs elsewhere in the
+    app; /extract callers still get the CrawlResult shape they expect.
+    """
+    log.exception("app.unhandled", path=request.url.path)
+    if request.url.path == "/extract":
+        result = CrawlResult(
+            url=request.query_params.get("url", ""),
+            status=Status.error,
+            reason=Reason.internal_error,
+            fetched_at=datetime.now(UTC),
+        )
+        return JSONResponse(result.model_dump(mode="json"))
+    return JSONResponse({"status": "error", "reason": Reason.internal_error}, status_code=500)
 
 
 @app.get("/favicon.ico", include_in_schema=False)

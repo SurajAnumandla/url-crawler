@@ -34,7 +34,7 @@ docker run -p 8000:8000 crawler
 ## Tests
 
 ```bash
-make test        # pytest — 92 tests, offline against saved HTML fixtures
+make test        # pytest — 96 tests, offline against saved HTML fixtures
 make check       # ruff + mypy --strict + pytest
 ```
 
@@ -88,7 +88,7 @@ Amazon served the page with HTTP 200 every time. On the 2026-09-13 residential f
 }
 ```
 
-`reason` values — blocked: `robots_disallowed`, `captcha`, `forbidden` (401, 403, 451, or a denial page served with 200), `rate_limited`. Error: `bad_url`, `private_address` (loopback, private, link-local or reserved target: refused without a fetch), `robots_unavailable`, `dns_error`, `connect_error`, `timeout`, `server_error`, `not_found` (404, 410), `client_error`, `redirect_not_followed` (3xx while redirects are disabled), `not_html`, `too_large`, `parse_failed`, `no_content` (a 200 with under 100 extracted words and no declared metadata: an error, maintenance or soft-404 page, whatever its wording).
+`reason` values — blocked: `robots_disallowed`, `captcha`, `forbidden` (401, 403, 451, or a denial page served with 200), `rate_limited`. Error: `bad_url`, `private_address` (loopback, private, link-local or reserved target: refused without a fetch), `robots_unavailable`, `dns_error`, `connect_error`, `timeout`, `server_error`, `not_found` (404, 410), `client_error`, `redirect_not_followed` (3xx while redirects are disabled), `not_html`, `too_large`, `parse_failed`, `no_content` (a 200 with under 100 extracted words and no declared metadata: an error, maintenance or soft-404 page, whatever its wording), `internal_error` (a fault inside the crawler, logged with its traceback; the caller still gets this JSON, never a 500).
 
 `robots_state` is one of `allowed`, `disallowed`, `missing` (no robots.txt: unrestricted per RFC 9309), `unavailable` (robots.txt answered 5xx), `unreachable`, `skipped`.
 
@@ -131,6 +131,8 @@ Everything runs in-process; no third-party crawling, extraction or classificatio
 
 - **`page_type`** is read from what the page declares, in order: JSON-LD `@type`, then Open Graph `og:type`, then product price markup, then URL shape as a last resort, else `other`. A page that was never fetched is `unknown`. Every label traces to one signal in the document.
 - **`topics`** come from YAKE, a single-document keyphrase extractor that scores phrases by position, frequency and context variety. TF-IDF is not used: its IDF term needs a corpus, and with one page it degenerates to term frequency. Phrases that appear in the title or an `h1` are boosted; near-duplicate phrases are dropped. The method is unsupervised — no taxonomy, no training data — so its quality is unmeasured until the labelled set in Part 3 §2 exists.
+
+**Nothing raises past the crawler.** Every stage returns a result rather than throwing; if one does throw, the crawl returns `error` / `internal_error` with the traceback logged; a whole crawl is capped at 90 seconds; and the API has a last-resort handler that returns the same JSON shape even for a fault outside the crawler. `/extract` answers HTTP 200 with a `CrawlResult` for every input except a missing `url` parameter (422).
 
 **`blocked` and `error` are kept apart.** A host refusing the crawler is a coverage fact; a timeout or a 5xx is a reliability fact. A robots.txt that answers 5xx is `error` / `robots_unavailable`, not a refusal. A 401, 403 or 451 is `blocked` / `forbidden`. A 404 is `error` / `not_found`, never a server error. Part 2's metrics and SLOs depend on this split.
 
@@ -187,6 +189,7 @@ Every setting is an environment variable.
 | Variable | Default | Meaning |
 |---|---|---|
 | `CRAWLER_TIMEOUT_SECONDS` | `20` | per-request timeout |
+| `CRAWLER_TOTAL_TIMEOUT_SECONDS` | `90` | cap on one whole crawl, all stages and retries; on expiry the result is `error` / `timeout` |
 | `CRAWLER_MAX_RETRIES` | `3` | attempts on timeouts, transport errors and 5xx |
 | `CRAWLER_FOLLOW_REDIRECTS` | `true` | |
 | `CRAWLER_MAX_REDIRECTS` | `5` | |

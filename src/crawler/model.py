@@ -35,6 +35,7 @@ class Reason(StrEnum):
     not_html = "not_html"
     too_large = "too_large"
     parse_failed = "parse_failed"
+    internal_error = "internal_error"  # a bug in the crawler itself; logged with its traceback
     no_content = "no_content"  # 200 with almost no extracted text and no declared metadata
 
 

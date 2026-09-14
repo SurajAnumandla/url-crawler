@@ -131,3 +131,12 @@ async def test_oversized_robots_is_truncated_not_buffered():
     respx.get("https://big.test/robots.txt").mock(return_value=httpx.Response(200, text=big))
     result = await check_robots("https://big.test/private/p")
     assert result.allowed is False   # the rule in the first 512 KiB still applies
+
+
+@respx.mock
+async def test_unparseable_robots_is_treated_as_missing(monkeypatch):
+    monkeypatch.setattr(mod.Protego, "parse", lambda text: (_ for _ in ()).throw(ValueError("bad")))
+    respx.get("https://z.test/robots.txt").mock(return_value=httpx.Response(200, text="garbage"))
+    result = await check_robots("https://z.test/p")
+    assert result.allowed is True
+    assert result.state == "missing"

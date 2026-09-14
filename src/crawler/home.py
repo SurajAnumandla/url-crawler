@@ -52,6 +52,7 @@ REASON_NOTES: dict[Reason, str] = {
     Reason.too_large: "The body exceeded the size limit and was abandoned.",
     Reason.parse_failed: "The HTML could not be parsed.",
     Reason.no_content: "A 200 with almost no visible text and no metadata for search engines: an error, maintenance or block page in disguise.",
+    Reason.internal_error: "A fault inside the crawler itself, logged with its traceback; the request still returns this result rather than failing.",
 }
 
 

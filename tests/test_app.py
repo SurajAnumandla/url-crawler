@@ -124,3 +124,17 @@ def test_every_reason_has_an_explanation_on_the_landing_page():
 
     assert set(REASON_NOTES) == set(Reason)
     assert all(note.endswith(".") for note in REASON_NOTES.values())
+
+
+def test_unhandled_exception_in_extract_still_returns_json(monkeypatch):
+    import crawler.app as app_mod
+
+    async def boom(url, client=None):
+        raise RuntimeError("bug outside the crawler")
+
+    monkeypatch.setattr(app_mod, "crawl_url", boom)
+    with TestClient(app, raise_server_exceptions=False) as c:
+        response = c.get("/extract", params={"url": "https://x.test/p"})
+    assert response.status_code == 200
+    assert response.json()["reason"] == "internal_error"
+    assert response.json()["url"] == "https://x.test/p"

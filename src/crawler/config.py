@@ -7,7 +7,8 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="CRAWLER_")
 
     # network
-    timeout_seconds: float = 20.0
+    timeout_seconds: float = 20.0      # per request
+    total_timeout_seconds: float = 90.0  # whole crawl of one URL, all stages and retries
     max_retries: int = 3
     follow_redirects: bool = True
     max_redirects: int = 5

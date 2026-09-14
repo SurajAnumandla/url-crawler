@@ -48,20 +48,23 @@ def extract_topics(
     """Body text in, ranked topics out. Never raises."""
     if not body or len(body.split()) < 20:
         return []
-
     try:
-        extractor = yake.KeywordExtractor(
-            lan="en",
-            n=3,              # up to 3-word phrases
-            dedupLim=0.7,
-            top=settings.max_topics * 3,
-        )
-        candidates = extractor.extract_keywords(body)
+        return _extract(body, title, headings)
     except Exception as exc:
         # An empty list must be distinguishable from a crashed extractor:
         # the 'empty topic rate' metric depends on it.
         log.warning("topics.failed", error=str(exc), error_type=type(exc).__name__)
         return []
+
+
+def _extract(body: str, title: str | None, headings: list[str] | None) -> list[Topic]:
+    extractor = yake.KeywordExtractor(
+        lan="en",
+        n=3,              # up to 3-word phrases
+        dedupLim=0.7,
+        top=settings.max_topics * 3,
+    )
+    candidates = extractor.extract_keywords(body)
 
     prominent = _normalise(" ".join(filter(None, [title, *(headings or [])])))
 

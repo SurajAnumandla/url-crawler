@@ -11,6 +11,7 @@ from datetime import UTC, datetime
 
 import httpx
 
+from crawler.config import settings
 from crawler.logging import log
 from crawler.model import CrawlResult, DownloadResult, Reason, RobotsState, Status
 from crawler.service_detect import detect_captcha, detect_denial
@@ -77,7 +78,13 @@ async def crawl_url(url: str, client: httpx.AsyncClient | None = None) -> CrawlR
     if client is None:
         client = make_client()
     try:
-        return await _crawl(url, client)
+        return await asyncio.wait_for(_crawl(url, client), timeout=settings.total_timeout_seconds)
+    except TimeoutError:
+        return _finish(url, Status.error, Reason.timeout)
+    except Exception:
+        # Every stage is written not to raise; this is the guarantee if one does.
+        log.exception("crawl.internal_error", url=url)
+        return _finish(url, Status.error, Reason.internal_error)
     finally:
         if owned:
             await client.aclose()
