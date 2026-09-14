@@ -11,7 +11,7 @@ Two facts shape the design:
 - **The shape of the list decides the limit.** Billions of URLs spread over a million websites are limited by CPU for parsing, so the design is about fleet size. Billions concentrated on three websites, as in the brief's example, are limited by how fast those sites tolerate being fetched, and no fleet size changes that; the design is then about choosing which fraction of the list to spend the budget on.
 - **The parse is the cost.** Fetching waits on the network; reading a page costs half a second of CPU. Every cost lever here parses fewer pages or parses them cheaper.
 
-Rounded estimates at 10 billion URLs a month over many sites: about 260 servers, about $84,000 a month at first and about $120,000 by the second year as storage accumulates, roughly $8.4 per million URLs. For the three-site example the same machinery runs on two servers on a floor of about $2,000 a month and fetches about 78 million pages a month across the three sites until they agree to more. All figures are back-of-envelope, rounded to two figures and good to about ±50% until the proof of concept measures page size, parse cost and how often pages change. Calculations are shown where they are used.
+Rounded estimates at 10 billion URLs a month over many sites: about 260 servers, about $85,000 a month at first and about $120,000 by the second year as storage accumulates, roughly $8.5 per million URLs. For the three-site example the same machinery runs on two servers on a floor of about $2,000 a month and fetches about 78 million pages a month across the three sites until they agree to more. All figures are back-of-envelope, rounded to two figures and good to about ±50% until the proof of concept measures page size, parse cost and how often pages change. Calculations are shown where they are used.
 
 ## 1. What the brief asks for
 
@@ -215,7 +215,7 @@ Prices are public list prices for us-east-1 as recalled at writing; every figure
 | Egress, queue, object writes | 258 public IPs × $0.005/h ($930); 3 queue requests per URL, batched ($1,200); 1,000 pages per object write ($50) | ~$2,200 |
 | Raw HTML storage | 400 TB/month × $0.023/GB in the first month, tiered to cheaper classes with age | $9,200 in month 1; $28,000 by month 24 |
 | Metadata storage | 25 TB/month × 2 replicas × $0.08/GB hot for three months, then cold | $4,000 in month 1; $24,000 by month 24 |
-| **Total** | | **~$84,000 in month 1; ~$120,000 by month 24; about $8.4 per million URLs at the start** |
+| **Total** | | **~$85,000 in month 1; ~$120,000 by month 24; about $8.5 per million URLs at the start** |
 
 **Few hosts:** the same components on two worker servers: a floor of about $2,000 a month for databases, caches and monitoring, and roughly $27 per million URLs at 78 million a month. Cost is not the constraint in this regime; the sites' tolerance is.
 
@@ -255,7 +255,7 @@ Each decision names what was chosen, the alternatives and the property that rule
 |  3 | Frontier store | Aurora PostgreSQL table, partitioned by host, priority computed at query time from stored weight and due date | sorted files on S3 read in order: the order cannot change after loading. All in Redis: ~1 TB of RAM | refill queries cannot keep up (pre-materialise heads) |
 |  4 | Worker compute | Graviton Spot, one process per core | Lambda: roughly the Spot fleet's cost again, and no connection reuse. Fargate Spot: no control of process placement. EKS: a cluster to run an autoscaling group | Spot interruptions break the 1-hour objective (add on-demand baseline) |
 |  5 | Raw store | S3, tiered | EFS: about thirteen times the price per GB. HDFS: storage tied to compute | frequent re-extraction (keep more hot) |
-|  6 | Raw object packing | per (worker, minute), 1,000 pages | per page: 3,900 writes/s and a thousand times the request charges. Per (host, hour): at a million hosts each buffer holds one page | pages are rewritten often (they are not) |
+|  6 | Raw object packing | per (server, minute), 1,000 pages | per page: 3,900 writes/s and a thousand times the request charges. Per (host, hour): at a million hosts each buffer holds one page | pages are rewritten often (they are not) |
 |  7 | Metadata store | ClickHouse, two tables, two replicas | Postgres: reads every column of every row. BigQuery: per-TB-scanned pricing across clouds. Elasticsearch: 2–3× storage, not a scanner. DynamoDB: no scans | insert rate produces unmanageable parts |
 |  8 | Schema | one table for all types; `extra` map; history by day, current by URL hash | one table by month: 10 billion rows in one partition and recrawls never collapse. Partition by host: too many parts | history never queried (keep 90 days) |
 |  9 | Dedup | exact sort and join at load | Bloom filter: 1% false positives drop 100M URLs/month and cannot forget. Redis set: roughly half a terabyte of memory | URLs arrive as a stream |
