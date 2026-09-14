@@ -1,0 +1,209 @@
+# Crawler
+
+Give it any URL. It returns the page's metadata, what kind of page it is, and what the page is about — one JSON document, from a CLI or an HTTP endpoint that share one code path.
+
+- **Live demo:** https://url-crawler.web.app (Google Cloud Run, us-central1, behind a Firebase Hosting address)
+- **Scale design (Part 2):** [`docs/part2-scale-design.md`](docs/part2-scale-design.md) · PDF in [`deliverables/`](deliverables/)
+- **PoC, blockers, schedule and release (Part 3):** [`docs/part3-poc-and-delivery.md`](docs/part3-poc-and-delivery.md) · PDF in [`deliverables/`](deliverables/)
+
+## Run it locally
+
+```bash
+make setup                                    # creates .venv, installs deps (Python 3.12)
+make run URL=https://en.wikipedia.org/wiki/Web_crawler              # CLI → JSON on stdout
+make serve                                    # API on http://localhost:8000
+```
+
+Or directly:
+
+```bash
+python -m crawler https://en.wikipedia.org/wiki/Web_crawler
+curl "http://localhost:8000/extract?url=https://en.wikipedia.org/wiki/Web_crawler"
+curl "http://localhost:8000/health"
+```
+
+Docker:
+
+```bash
+docker build -t crawler .
+docker run -p 8000:8000 crawler
+```
+
+## Tests
+
+```bash
+make test        # pytest — 92 tests, offline against saved HTML fixtures
+make check       # ruff + mypy --strict + pytest
+```
+
+Parsing takes an HTML string, never a URL, which is what lets the suite run without a network. The fixtures are the real responses from the three test URLs.
+
+## Deployment and live URL
+
+The service runs on Google Cloud Run, deployed from this repository's `Dockerfile`. Prerequisites: the Google Cloud SDK, an authenticated account, and a project with billing and the Cloud Run, Cloud Build and Artifact Registry APIs enabled. The Firebase front door is deployed separately with `firebase deploy --only hosting` from `deploy/firebase/`.
+
+```bash
+gcloud run deploy crawler --source . --region us-central1 --allow-unauthenticated \
+  --cpu 1 --memory 1Gi --concurrency 2 --timeout 120 --min-instances 0 --max-instances 3
+```
+
+Memory is 1 GiB because one parse of a 5.6 MB page takes the process to about 380 MB RSS (measured, n=1). Parse and topic extraction run in a worker thread, so the event loop keeps answering other requests and `/health` during a parse (measured: four parses stall the loop for 1.4 s when run inline and for at most 0.16 s in threads, n=3). Concurrency is 2 because the instance has one vCPU and a parse costs 500 ms of it (measured on the development machine); Part 2 §3.3 turns that into the fleet's process model. The service scales to zero and is capped at three instances, which bounds the worst-case bill at roughly $190 a month (list price, assumed) if the URL were called continuously.
+
+```bash
+curl "https://url-crawler.web.app/health"
+curl "https://url-crawler.web.app/extract?url=https://en.wikipedia.org/wiki/Web_crawler"
+```
+
+The readable address is a Firebase Hosting site that forwards every request to the Cloud Run service; the config is two lines in [`deploy/firebase/firebase.json`](deploy/firebase/firebase.json) and stores nothing. The service's own address, https://crawler-61590586333.us-central1.run.app, keeps working.
+
+Opening the bare URL, or any path that is not an endpoint, lands on `/home`: a single page where you can run the crawler on any URL and see the result as a card (status, reason, title, page type, topics, raw JSON), with the three assignment URLs and a Wikipedia article as one-click examples labelled with the outcome the recorded run produced. Without JavaScript the examples still work as plain links to `/extract`. The footer shows the live revision from `/health` and links to `/docs`.
+
+## Results on the three test URLs
+
+Recorded from the live deployment; full JSON in [`docs/samples/`](docs/samples/).
+
+| URL | `status` / `reason` | HTTP | `robots_state` | `page_type` | Words | Top topics |
+|---|---|---|---|---|---|---|
+| [CNN article](docs/samples/cnn.json) | `success` / `ok` | 200 | `allowed` | `article` | 621 | google, software development, tech |
+| [Amazon product](docs/samples/amazon.json) | `success` / `ok` | 200 | `allowed` | `product` | 1,154 | compact plastic toaster, removable crumb tray, toaster |
+| [REI blog](docs/samples/rei.json) | `blocked` / `forbidden` | 403 | `missing` | `unknown` | 0 | — |
+
+Amazon served the page with HTTP 200 every time. On the 2026-09-13 residential fetch the response carried no `Content-Type` header and the body was sniffed; the Cloud Run fetch recorded in the sample carried `text/html;charset=UTF-8`. The extracted word count differed on every fetch (319, 1,154 and 1,487 across three runs) because Amazon serves page variants; title, `page_type` and the leading topics were the same in each. REI returns HTTP 403 from its Akamai edge for the page and for `/robots.txt`; the same URL returns 200 to a Safari `User-Agent` from the same machine, so the block is on the crawler's declared identity. Both facts were measured once from a residential IP (2026-09-13) and once from Cloud Run (2026-09-14) with the same outcome.
+
+## Output
+
+21 fields. `status` is `success`, `blocked` or `error`, always with a `reason`.
+
+```json
+{
+  "url": "...", "final_url": "...", "status": "success", "reason": "ok",
+  "http_status": 200, "content_type": "text/html", "fetched_at": "...", "robots_state": "allowed",
+  "title": "...", "description": "...", "canonical_url": "...",
+  "author": "...", "published_date": "...", "language": "en",
+  "h1_headings": [], "og_tags": {}, "twitter_tags": {},
+  "body": "...", "word_count": 621, "page_type": "article",
+  "topics": [{"topic": "...", "score": 0.98}]
+}
+```
+
+`reason` values — blocked: `robots_disallowed`, `captcha`, `forbidden` (401, 403, 451, or a denial page served with 200), `rate_limited`. Error: `bad_url`, `private_address` (loopback, private, link-local or reserved target: refused without a fetch), `robots_unavailable`, `dns_error`, `connect_error`, `timeout`, `server_error`, `not_found` (404, 410), `client_error`, `redirect_not_followed` (3xx while redirects are disabled), `not_html`, `too_large`, `parse_failed`, `no_content` (a 200 with under 100 extracted words and no declared metadata: an error, maintenance or soft-404 page, whatever its wording).
+
+`robots_state` is one of `allowed`, `disallowed`, `missing` (no robots.txt: unrestricted per RFC 9309), `unavailable` (robots.txt answered 5xx), `unreachable`, `skipped`.
+
+`topics[].score` is a **relative rank**: `1 − YAKE score`, higher is more prominent within this page. It is not a probability and is not comparable across pages.
+
+## How it works
+
+```
+URL → robots → download → CAPTCHA check → parse → classify → content check → topics → JSON
+```
+
+| Module | Job |
+|---|---|
+| `service_robots.py` | may we fetch this? Bounded, time-limited per-host cache |
+| `service_download.py` | get the bytes — timeouts, retries with backoff, redirects, streamed size cap, charset fallback |
+| `service_detect.py` | is this a CAPTCHA (raw HTML), or a page with no content or a denial (parsed page) wearing a 200? |
+| `service_parse.py` | title, meta tags, canonical, author, date, language, headings, body text (visible-text fallback) |
+| `service_pagetype.py` | what kind of page — product, article, listing, profile |
+| `service_topics.py` | what the page is about |
+| `service_crawl.py` | runs the above in order with one HTTP client per crawl; every path returns a `CrawlResult` and logs one terminal event |
+| `__main__.py`, `app.py` | the CLI and the API — thin doors onto `service_crawl` |
+| `home.py`, `templates/home.html` | the landing page served at `/home` |
+
+Everything runs in-process; no third-party crawling, extraction or classification service is called. Each choice below names what it was chosen over and the property that disqualified the alternative; the full decision records for the scaled system are in Part 2 §13.
+
+| Choice | Chosen | Rejected — disqualifying property |
+|---|---|---|
+| Language | Python 3.12, asyncio | Go — no in-process main-content extractor at trafilatura's precision; porting one is a project. Node.js — same single-threaded parse constraint, thinner keyphrase libraries |
+| HTTP client | httpx | aiohttp — no HTTP/2. requests — synchronous; a thread per in-flight fetch competing with the parse for the interpreter lock |
+| HTML parser | selectolax (lexbor) | BeautifulSoup + html.parser — pure-Python tree building on 5 MB documents. lxml.html — pre-HTML5 tree construction differs from browsers on malformed markup |
+| Content extraction | trafilatura | readability-lxml — one heuristic, no metadata, no comment/table control. boilerpy3 — no metadata; trained on 2008-era layouts |
+| Page classification | declared-markup cascade | supervised classifier — no labelled data exists, so accuracy would be unmeasurable. Hosted or LLM classification — a third-party service offering the same functionality, and per-page cost at billions of pages |
+| Topics | YAKE | TF-IDF — needs a corpus; degenerates to term frequency on one page. Embedding models (KeyBERT) — hundreds of MB of weights per process and per-page inference in seconds without accelerators (assumed, not measured). RAKE — no positional term |
+| API | FastAPI on uvicorn | Flask — WSGI, a thread per request to await httpx. Django — ORM and admin unused. Bare Starlette — no response-schema validation |
+| Demo hosting | Google Cloud Run from source | AWS Lambda — needs an ASGI adapter and an image pushed from a local Docker daemon. AWS App Runner — ECR push or a GitHub connection before the first deploy. Azure Container Apps — an environment and a Log Analytics workspace before deploy |
+
+## Design decisions
+
+**Classification and topics are two outputs, produced by two methods.**
+
+- **`page_type`** is read from what the page declares, in order: JSON-LD `@type`, then Open Graph `og:type`, then product price markup, then URL shape as a last resort, else `other`. A page that was never fetched is `unknown`. Every label traces to one signal in the document.
+- **`topics`** come from YAKE, a single-document keyphrase extractor that scores phrases by position, frequency and context variety. TF-IDF is not used: its IDF term needs a corpus, and with one page it degenerates to term frequency. Phrases that appear in the title or an `h1` are boosted; near-duplicate phrases are dropped. The method is unsupervised — no taxonomy, no training data — so its quality is unmeasured until the labelled set in Part 3 §5 exists.
+
+**`blocked` and `error` are kept apart.** A host refusing the crawler is a coverage fact; a timeout or a 5xx is a reliability fact. A robots.txt that answers 5xx is `error` / `robots_unavailable`, not a refusal. A 401, 403 or 451 is `blocked` / `forbidden`. A 404 is `error` / `not_found`, never a server error. Part 2's metrics and SLOs depend on this split.
+
+**Content type is sniffed when the header is missing.** Amazon answered with no `Content-Type` on one recorded fetch; trusting the header alone would have discarded a valid 1.6 MB page. Matching is case-insensitive and an unknown declared charset falls back to UTF-8 rather than failing the crawl.
+
+**Block pages are detected where the evidence is.** CAPTCHA pages carry distinctive phrases, so they are caught on the raw HTML before parsing. Denial pages say so in their title or heading and have almost no content, so they are judged after parsing: a denial phrase in the title or an `h1` plus an extracted body under 100 words. An article that mentions "access denied" is content; a branded block page with navigation around it is still a block. The general rule needs no phrase list: a 200 with under 100 extracted words and no declared metadata (description, canonical, Open Graph, Twitter, JSON-LD type, author, date) is `error` / `no_content`, whatever language or wording the page uses, because nobody marks an error page up for search engines. The denial phrases only upgrade such a page to `blocked` when it says so. Content alone cannot tell a genuine maintenance page from a disguised bot block: Myntra served a "Site Maintenance" page with HTTP 200 to the crawler's User-Agent and the product page to a Safari User-Agent (measured 2026-09-14, one fetch each), so the `no_content` rate per host is an input to the block measurement in Part 3. When the article extractor finds no article at all, the page's visible text is used instead, so a text page without article structure is not mistaken for an empty one. The rule's cost: a page with no metadata and under 100 words, such as `example.com`, is reported as `no_content` even when it is genuinely all there is.
+
+**Metadata is declared or absent, never invented.** trafilatura's fallback metadata is accepted only if the value appears verbatim in the HTML; its date guess is not used at all, because it returns the current date for undated pages. A missing `author` is correct; a fabricated one is not.
+
+**robots.txt follows RFC 9309.** A 4xx means unrestricted; a 5xx means hold off; redirects are always followed for robots.txt whatever the page setting; only the first 512 KiB is parsed; the result is cached per host with a 24 h TTL (5 min for a 5xx so a recovered host is re-checked) in a bounded LRU.
+
+**The size cap bounds memory.** The body is streamed and abandoned the moment it exceeds `CRAWLER_MAX_BYTES` (default 20 MB; the CNN article is 5.6 MB). Error bodies are drained within the same cap so the pooled connection stays reusable.
+
+## Behaviour on other sites
+
+`scripts/smoke.py` runs the crawler against 52 live URLs chosen to be awkward: news and e-commerce homepages, government and non-English sites, JavaScript-only applications, PDFs and JSON, 4xx/5xx responses, redirects, expired TLS, dead hosts, private addresses and malformed input. Measured 2026-09-14 twice, from a residential IP and from the Cloud Run deployment: every URL produced a `CrawlResult` both times, none raised. What the reasons looked like, with the cases worth knowing about:
+
+| Observed | Reported as | Note |
+|---|---|---|
+| BBC, Guardian, Le Monde, Asahi, Naver, GOV.UK, Arabic Wikipedia | `success` | non-English pages extract; homepages classify as `other` because they declare no type |
+| Reuters, LinkedIn, Twitter, Instagram, Netflix | `blocked` / `robots_disallowed` | never fetched |
+| Etsy, eBay, Stack Overflow, Medium, india.gov.in | `blocked` / `forbidden` | HTTP 403 from both networks |
+| Flipkart | `blocked` / `forbidden` from the residential IP; `error` / `robots_unavailable` from Cloud Run | its robots.txt answered 5xx to Google's egress IP, so the page was not fetched at all |
+| Walmart product page | `blocked` / `captcha` | "Robot or human?" challenge served with 200 |
+| Myntra product page | `error` / `no_content` | "Site Maintenance" page with 200 to the crawler, product page to a browser |
+| Ars Technica | `error` / `no_content` from the residential IP; `success` from Cloud Run | HTTP 202 with an empty challenge page to one network, the full page to the other |
+| Best Buy | `error` / `connect_error` | connection reset during TLS for the crawler's User-Agent |
+| PDF, JSON, PNG | `error` / `not_html` | |
+| expired or self-signed TLS | `error` / `connect_error` | certificate errors are not bypassed |
+| `192.168.1.1`, `169.254.169.254`, `localhost`, `[::1]` | `error` / `private_address` | refused before any fetch |
+| `ftp:`, `mailto:`, `javascript:` | `error` / `bad_url` | |
+
+Results depend on the requesting network as much as on the site, which is why Part 2 measures block rate per host and per egress IP rather than assuming it. The last three rows are the ones a public demo must get right. Hostnames that resolve to a private address are not caught; that needs a resolver hook and is a known limitation.
+
+## Known limitations
+
+- **JavaScript-rendered pages.** The HTML is read as served; content injected by scripts is invisible. Rendering is excluded and costed as a coverage constraint in Part 2 §8.
+- **Bot detection.** Blocks are detected and reported, not evaded. REI's block is on the declared `User-Agent`; passing it would mean misrepresenting the crawler.
+- **Paywalls.** Whatever is served is extracted, usually a teaser.
+- **Non-English pages.** YAKE is configured for English; other languages produce weaker topics.
+- **Product pages.** trafilatura is tuned for articles; on Amazon the body is usable but its first line is boilerplate rather than the description.
+- **No caching of pages.** Every call re-fetches. robots.txt is cached; pages are not.
+- **DNS rebinding.** Literal private and link-local addresses are refused; a public hostname that resolves to one is not detected.
+- **Disguised blocks.** A block served as a maintenance page (200), an empty 202, or a TLS reset is reported as `no_content` or `connect_error`, not `blocked`, because a single fetch cannot prove intent. Part 2 §8 describes the host-level signals that can.
+
+## What changes at scale
+
+One URL at a time, fetching is I/O-bound and parsing is the CPU cost (measured 500 ms per page). At billions of URLs per month the parse sets the fleet size, one process per core is the deployment unit, per-host request rate becomes the ceiling when the input is concentrated on a few domains, and storage is a stock that accumulates. The design, with every number labelled and derived by `scripts/ledger.py`, is in [`docs/part2-scale-design.md`](docs/part2-scale-design.md); the path to a proof of concept and a release is in [`docs/part3-poc-and-delivery.md`](docs/part3-poc-and-delivery.md).
+
+## Configuration
+
+Every setting is an environment variable.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `CRAWLER_TIMEOUT_SECONDS` | `20` | per-request timeout |
+| `CRAWLER_MAX_RETRIES` | `3` | attempts on timeouts, transport errors and 5xx |
+| `CRAWLER_FOLLOW_REDIRECTS` | `true` | |
+| `CRAWLER_MAX_REDIRECTS` | `5` | |
+| `CRAWLER_MAX_BYTES` | `20000000` | streamed body cap |
+| `CRAWLER_USER_AGENT` | identifies as a bot with a contact URL | |
+| `CRAWLER_RESPECT_ROBOTS` | `true` | |
+| `CRAWLER_ROBOTS_CACHE_SIZE` | `10000` | origins kept per process (LRU) |
+| `CRAWLER_ROBOTS_CACHE_TTL_SECONDS` | `86400` | |
+| `CRAWLER_ROBOTS_UNAVAILABLE_TTL_SECONDS` | `300` | re-check a 5xx or unreachable host |
+| `CRAWLER_MAX_TOPICS` | `10` | |
+| `CRAWLER_REPO_URL` | empty | link to the public repository on the landing page; omitted when empty |
+| `CRAWLER_AUTHOR_LINE` | name and purpose | byline on the landing page |
+
+## AI tools used
+
+**Claude Code** (Anthropic) was used throughout, as the assignment permits. How it helped:
+
+- **Writing code and tests** from a structure I specified — module boundaries, the `blocked` / `error` split, the declared-markup classifier, the frontier design — with every change reviewed and run by me.
+- **Finding defects by running the crawler against the three live URLs**, which surfaced problems that reading the code did not: a page-size cap too small for real news pages, Amazon's missing `Content-Type` header, a 404 reported as a server error, a robots.txt cache that lost its state after the first request per host, and a 403 reported with a null HTTP status.
+- **Drafting and checking the design documents**: turning my decisions into decision records, building the number ledger script so every derived figure recomputes from its inputs, and reading each draft against the assignment text for unsupported claims.
+
+The design decisions, the numbers, and the prose in this repository are mine; I have checked them and stand behind them.

@@ -1,0 +1,16 @@
+.venv/
+.git/
+.idea/
+__pycache__/
+*.py[cod]
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+*.egg-info/
+tests/
+docs/
+*.md
+Makefile
+.DS_Store
+deliverables/
+scripts/

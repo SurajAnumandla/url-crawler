@@ -1,0 +1,57 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "crawler"
+version = "0.1.0"
+description = "Extract metadata and topics from any URL"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "httpx[http2]>=0.28,<0.29",   # async fetching
+    "tenacity>=9.0,<10.0",        # retry with backoff
+    "selectolax>=0.3.21",         # fast HTML parsing
+    "trafilatura>=2.0,<3.0",      # main-content extraction
+    "protego>=0.3.1",             # robots.txt
+    "yake>=0.4.8",                # topic extraction, offline
+    "pydantic>=2.9,<3.0",         # JSON schema
+    "pydantic-settings>=2.5,<3.0",# config from env vars
+    "structlog>=24.4",            # structured logs
+    "fastapi>=0.115,<0.116",
+    "uvicorn[standard]>=0.32,<0.33",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.3", "pytest-asyncio>=0.24", "respx>=0.21", "ruff>=0.7", "mypy>=1.13", "markdown>=3.7"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+crawler = ["py.typed", "templates/*.html"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "SIM", "RET", "ANN", "ASYNC"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["ANN"]
+"src/crawler/home.py" = ["E501"]  # one-sentence reason notes read better unwrapped
+"scripts/*" = ["ANN", "E501"]
+
+[tool.mypy]
+python_version = "3.12"
+files = ["src", "scripts"]
+mypy_path = ["src"]
+strict = true
+
+[[tool.mypy.overrides]]
+module = ["yake.*", "selectolax.*", "trafilatura.*", "protego.*", "markdown.*"]
+ignore_missing_imports = true

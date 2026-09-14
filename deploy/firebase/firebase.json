@@ -1,0 +1,10 @@
+{
+  "hosting": {
+    "site": "url-crawler",
+    "public": "public",
+    "ignore": ["firebase.json", "**/.*"],
+    "rewrites": [
+      { "source": "**", "run": { "serviceId": "crawler", "region": "us-central1" } }
+    ]
+  }
+}

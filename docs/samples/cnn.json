@@ -1,0 +1,79 @@
+{
+  "url": "https://www.cnn.com/2025/09/23/tech/google-study-90-percent-tech-jobs-ai",
+  "final_url": "https://www.cnn.com/2025/09/23/tech/google-study-90-percent-tech-jobs-ai",
+  "status": "success",
+  "reason": "ok",
+  "http_status": 200,
+  "content_type": "text/html; charset=utf-8",
+  "fetched_at": "2026-09-13T20:44:35.165519Z",
+  "robots_state": "allowed",
+  "title": "Google says 90% of tech workers are now using AI at work | CNN Business",
+  "description": "The overwhelming majority of tech industry workers use artificial intelligence on the job for tasks like writing and modifying code, a new Google study has found.",
+  "canonical_url": "https://www.cnn.com/2025/09/23/tech/google-study-90-percent-tech-jobs-ai",
+  "author": "Lisa Eadicicco",
+  "published_date": "2025-09-23T14:00:10.082Z",
+  "language": "en",
+  "h1_headings": [
+    "Google says 90% of tech workers are now using AI at work"
+  ],
+  "og_tags": {
+    "og:title": "Google says 90% of tech workers are now using AI at work | CNN Business",
+    "og:description": "The overwhelming majority of tech industry workers use artificial intelligence on the job for tasks like writing and modifying code, a new Google study has found.",
+    "og:image": "https://media.cnn.com/api/v1/images/stellar/prod/gettyimages-1341307279.jpg?c=16x9&q=w_800,c_fill",
+    "og:type": "article",
+    "og:url": "https://www.cnn.com/2025/09/23/tech/google-study-90-percent-tech-jobs-ai",
+    "og:site_name": "CNN"
+  },
+  "twitter_tags": {
+    "twitter:title": "Google says 90% of tech workers are now using AI at work | CNN Business",
+    "twitter:description": "The overwhelming majority of tech industry workers use artificial intelligence on the job for tasks like writing and modifying code, a new Google study has found.",
+    "twitter:image": "https://media.cnn.com/api/v1/images/stellar/prod/gettyimages-1341307279.jpg?c=16x9&q=w_800,c_fill",
+    "twitter:card": "summary_large_image",
+    "twitter:site": "@CNNbusiness"
+  },
+  "body": "The overwhelming majority of tech industry workers use artificial intelligence on the job for tasks like writing and modifying code, a new Google study has found.\nThe report, coming from Google’s DORA research division and based on 5,000 responses from technology professionals around the world, found that 90% of respondents are using AI in their job, up 14% from last year.\nThe findings come as the rise of AI has prompted a mix of concern, hype and promise around how the technology could impact jobs and the economy. Anthropic CEO Dario Amodei made headlines in May when he said AI could lead to a spike in unemployment, a sentiment that other tech industry professionals have since tamped down. But some data does suggest it’s getting harder for entry-level workers to find jobs in software engineering, a trend that comes amid a wave of layoffs in the tech industry.\nGoogle is one of many companies looking to capitalize on the shift to AI-assisted software development; it offers tools that range from free to $45 per month for helping with code generation and deploying agents that can handle software development tasks. And the company faces widespread competition, not just from rivals like Microsoft, OpenAI and Anthropic but also AI coding startups such as Replit and Anysphere, which are seeing their valuations soar as tech companies increasingly adopt AI.\nRyan J. Salva, who oversees Google’s coding tools like Gemini Code Assist, said the “vast majority” of teams at Google are using AI, saying the technology has been embedded into everything from the way documentation is written to Google’s code editors.\n“If you are an engineer at Google, it is unavoidable that you will be using AI as part of your daily work,” he said in an interview with CNN ahead of the report’s release.\nBut just because coders use AI doesn’t necessarily mean they’re all finding value in it. Forty-six percent of tech professionals who participated in the survey said they “somewhat” trust the quality of AI-generated code, while 23% said they only trust it “a little” and 20% said they trust it “a lot.” And 31% said AI “slightly improved” code quality, while 30% said it had “no impact.”\nSalva says on a scale of one to five, with one being basic text prediction and five being the ability to give AI a general vague command, AI software development is somewhere between stage three and four. That’s to say AI can troubleshoot across systems but still needs human review and “lots of safety nets.”\nThe adoption of AI tools comes at a challenging time for entry-level tech workers. The unemployment rate for recent computer science and computer engineering graduates is now higher than that for fields like art history and English, according to The New York Fed, and job listings for software engineering roles on Indeed fell by 71% between February 2022 and August 2025.\nRecent computer science graduates who spoke with CNN earlier this year were generally optimistic about future career prospects but acknowledged that AI is changing the nature of the job. One recent graduate, Julio Rodriguez, said he applied to more than 150 jobs before landing a role.\nWhile AI adoption is advancing fast, Salva is in the camp of those who believe that there are critical parts of software development hat cannot be automated and that AI will streamline the parts that workers find mundane.\nBut he acknowledges that at least some of the uptick in adopting AI has probably come from the buzz surrounding the technology.\n“Software development is a fashion industry… We’re all chasing the next style of jeans,” he said. “And when there’s that much conversation about it, everyone’s just excited to try the new thing.”",
+  "word_count": 621,
+  "page_type": "article",
+  "topics": [
+    {
+      "topic": "google",
+      "score": 0.984
+    },
+    {
+      "topic": "software development",
+      "score": 0.97
+    },
+    {
+      "topic": "tech",
+      "score": 0.969
+    },
+    {
+      "topic": "ceo dario amodei",
+      "score": 0.964
+    },
+    {
+      "topic": "google study",
+      "score": 0.963
+    },
+    {
+      "topic": "artificial intelligence",
+      "score": 0.962
+    },
+    {
+      "topic": "writing and modifying",
+      "score": 0.962
+    },
+    {
+      "topic": "tech industry",
+      "score": 0.961
+    },
+    {
+      "topic": "software",
+      "score": 0.953
+    },
+    {
+      "topic": "code",
+      "score": 0.943
+    }
+  ]
+}
