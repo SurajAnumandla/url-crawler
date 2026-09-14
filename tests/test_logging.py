@@ -36,7 +36,8 @@ def test_every_request_is_logged_with_headers_and_redaction(tmp_path, monkeypatc
     for h in logging.getLogger().handlers:
         h.flush()
     logfile = next(tmp_path.iterdir())
-    lines = [json.loads(line) for line in logfile.read_text().splitlines()]
+    raw = logfile.read_text().splitlines()
+    lines = [json.loads(line) for line in raw]        # every line must be JSON, ours or a library's
     req = [e for e in lines if e["event"] == "http.request" and e["path"] == "/health"][-1]
     assert req["method"] == "GET" and req["status"] == 200 and req["duration_ms"] >= 0
     assert req["headers"]["x-trace"] == "abc"

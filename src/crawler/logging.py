@@ -12,6 +12,7 @@ import logging
 import socket
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import TextIO
 
 import structlog
 
@@ -26,7 +27,7 @@ class DailyFileHandler(logging.Handler):
         self.directory = directory
         self.name_prefix = name
         self._date = ""
-        self._stream = None  # type: ignore[assignment]
+        self._stream: TextIO | None = None
 
     def _path_for(self, date: str) -> Path:
         return self.directory / f"{self.name_prefix}-{date}.log"
@@ -57,21 +58,29 @@ def log_name() -> str:
 
 
 def setup_logging(level: str = "INFO") -> None:
+    """Every record — ours and third-party libraries' — becomes one JSON line."""
+    shared: list[structlog.types.Processor] = [
+        structlog.stdlib.add_log_level,
+        structlog.processors.TimeStamper(fmt="iso", utc=True),
+    ]
+    formatter = structlog.stdlib.ProcessorFormatter(
+        processors=[
+            structlog.stdlib.ProcessorFormatter.remove_processors_meta,
+            structlog.processors.format_exc_info,
+            structlog.processors.JSONRenderer(),
+        ],
+        foreign_pre_chain=shared,  # stdlib loggers (httpx, uvicorn…) get the same shape
+    )
     handlers: list[logging.Handler] = [logging.StreamHandler()]
     with contextlib.suppress(OSError):  # read-only filesystem: stdout only
         handlers.append(DailyFileHandler(Path(settings.log_dir), log_name()))
     for handler in handlers:
-        handler.setFormatter(logging.Formatter("%(message)s"))
+        handler.setFormatter(formatter)
     root = logging.getLogger()
     root.handlers[:] = handlers
     root.setLevel(getattr(logging, level.upper()))
     structlog.configure(
-        processors=[
-            structlog.stdlib.add_log_level,
-            structlog.processors.TimeStamper(fmt="iso", utc=True),
-            structlog.processors.format_exc_info,
-            structlog.processors.JSONRenderer(),
-        ],
+        processors=[*shared, structlog.stdlib.ProcessorFormatter.wrap_for_formatter],
         logger_factory=structlog.stdlib.LoggerFactory(),
         wrapper_class=structlog.make_filtering_bound_logger(getattr(logging, level.upper())),
         cache_logger_on_first_use=False,
