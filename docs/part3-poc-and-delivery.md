@@ -2,20 +2,20 @@
 
 Documentation for the brief's Part 3: "how to proceed with engineering to Proof of Concept", "the list of potential blockers", "what are known and trivial and what are the estimates arrival time", "implementation schedules", and "how to have a successful and highly quality release". The three outputs the brief asks for map to sections as follows: how to proceed to next steps → §3 and §7; how to evaluate the proof of concept → §1 and §5; release plan and time estimations → §4 and §6.
 
-Numbers are labelled **measured**, **assumed** or **derived** as in Part 2; ledger IDs (N-xx, F-xx) refer to Part 2 Appendix B.
+Numbers are labelled **measured**, **assumed** or **derived** as in Part 2.
 
 ## 1. PoC scope and success criteria
 
-The PoC runs the Part 1 crawler through the Part 2 pipeline (ingest → frontier → SQS → worker fleet → S3 + ClickHouse → read API) in one AWS region, and answers the assumptions the design rests on. It is two runs, because the two input regimes have different binding constraints (Part 2 §1):
+The PoC runs the Part 1 crawler through the Part 2 pipeline (ingest → frontier → SQS → worker fleet → S3 + ClickHouse → read API) in one AWS region, and answers the assumptions the design rests on. It is two runs, because the two input regimes have different binding constraints (Part 2 §2):
 
 | Run | Input | What it measures | Why this shape |
 |---|---|---|---|
-| **A — few-domain** | the three hosts the brief names; up to 1M URLs sampled from their sitemaps or a customer list; two crawl cycles a week apart | accepted rate per host (F-10); block rate and `robots_state` per host; page-size distribution (N-03); unchanged rate on recrawl (N-17); JS-only share (Part 2 Appendix A decision 13) | the brief's own example; at 10 req/s per host 1M URLs take 9.3 h (derived: 1e6 / 30 / 3,600) — this run cannot test fleet throughput and is not asked to |
-| **B — many-domain** | 25M URLs across ≥ 10,000 hosts (the customer's long tail, or hosts whose robots.txt permits crawling), one cycle; plus two synthetic loads: a frontier table filled with 1e9 generated rows over 1M hosts, and a ClickHouse inserter at 3,858 rows/s | sustained fetch rate, parse CPU on target cores (N-05b), cost per million (N-24), ClickHouse insert behaviour (Part 2 Appendix A decision 7), point-lookup p99 (decision 10) | throughput can only be measured where politeness is not the ceiling |
+| **A — few-domain** | the three hosts the brief names; up to 1M URLs sampled from their sitemaps or a customer list; two crawl cycles a week apart | accepted rate per host (the assumed 10 requests a second per host); block rate and `robots_state` per host; page-size distribution (page size); unchanged rate on recrawl (the unchanged-on-recrawl rate); JS-only share (Part 2 Appendix A decision 13) | the brief's own example; at 10 req/s per host 1M URLs take 9.3 h (derived: 1e6 / 30 / 3,600) — this run cannot test fleet throughput and is not asked to |
+| **B — many-domain** | 25M URLs across ≥ 10,000 hosts (the customer's long tail, or hosts whose robots.txt permits crawling), one cycle; plus two synthetic loads: a frontier table filled with 1e9 generated rows over 1M hosts, and a ClickHouse inserter at 3,858 rows/s | sustained fetch rate, parse CPU on target cores (parse cost per page), cost per million (cost per million), ClickHouse insert behaviour (Part 2 Appendix A decision 7), point-lookup p99 (decision 10) | throughput can only be measured where politeness is not the ceiling |
 
 Out of scope for the PoC: multi-region, JavaScript rendering, the full recrawl scheduler beyond the priority formula, and any read API beyond point lookup and the month/domain scan.
 
-**Success criteria.** The PoC passes when every row of §5 has a measured value and each pass/fail row passes, and when the Part 2 cost model, re-run with the measured N-03, N-05b and N-17, lands within 30% of the pre-PoC figure or the difference is explained line by line.
+**Success criteria.** The PoC passes when every row of §5 has a measured value and each pass/fail row passes, and when the Part 2 cost model, re-run with the measured page size, parse cost and unchanged rate, lands within 30% of the pre-PoC figure or the difference is explained line by line.
 
 ## 2. Blockers
 
@@ -23,25 +23,25 @@ Each blocker is classed **known / trivial** (the method is known; only effort is
 
 | # | Blocker | Class | Arrival time | Unblocked by |
 |---|---|---|---|---|
-| B1 | Ingesting an 800 GB URL file (N-28) | known / trivial | week 2 | byte-range parallel read from S3; external sort by `url_hash`; 3 engineer-days (assumed) |
+| B1 | Ingesting an 800 GB URL file (the 800 GB list file) | known / trivial | week 2 | byte-range parallel read from S3; external sort by `url_hash`; 3 engineer-days (assumed) |
 | B2 | Reading the source list from MySQL | known / trivial | week 2 | replica + keyset pagination; 1 day |
 | B3 | Malformed input (invalid UTF-8, null bytes, stray CR) | known / trivial | week 2 | sanitise at ingest; reject and count, never drop silently; 1 day |
 | B4 | Frontier scheduler: refill, back queues, token buckets (Part 2 §4.2) | known / trivial | week 3 | frontier table + Redis lists and Lua token bucket + selector loop; 5 days |
 | B5 | Raw-object batching with offset pointers (decision 6) | known / trivial | week 3 | buffer + flush + ranged-GET reader; 2 days |
 | B6 | Fleet deployment and autoscaling | known / trivial | week 3 | ECS on Spot ASG; scaling rule from Part 2 §4.4; 4 days |
 | B7 | Monitoring wiring (Part 2 §7) | known / trivial | week 5 | metrics already defined; dashboards and alarms; 4 days |
-| B8 | Page-size distribution (N-03) | risky / unknown | week 1 | Run A sample of 10,000 pages; a 5× swing changes storage and bandwidth lines |
-| B9 | Parse CPU on target cores (N-05b) | risky / unknown | week 1 | profile on c7g; replaces the 1.5× assumption; scales the largest cost line |
-| B10 | Unchanged rate on recrawl (N-17) | risky / unknown | week 5 | Run A cycle 2; the largest saving in the model |
+| B8 | Page-size distribution (page size) | risky / unknown | week 1 | Run A sample of 10,000 pages; a 5× swing changes storage and bandwidth lines |
+| B9 | Parse CPU on target cores (parse cost per page) | risky / unknown | week 1 | profile on c7g; replaces the 1.5× assumption; scales the largest cost line |
+| B10 | Unchanged rate on recrawl (the unchanged-on-recrawl rate) | risky / unknown | week 5 | Run A cycle 2; the largest saving in the model |
 | B11 | ClickHouse insert batching and merge lag at target rate | risky / unknown | week 5 | Run B; decides whether ClickHouse or a managed alternative ships |
-| B19 | Frontier refill latency on a 1.2 TB table at 1M hosts (Part 2 Appendix A, decision 3) | risky / unknown | week 4 | Run B; if top-k refill cannot sustain the release rate, back-queue heads are pre-materialised by a batch job |
 | B12 | Point-lookup p99 under concurrent inserts (decision 10) | risky / unknown | week 6 | load test; decides whether a KV summary tier is added |
 | B13 | Anti-bot blocking on target hosts, including blocks disguised as maintenance or error pages (`no_content`) | risky / unknown | week 1 (measured), decision by week 2 | measured per host in Run A with a browser-User-Agent probe on every `no_content` and `blocked` host; the policy question (accept the coverage ceiling, or negotiate access) is the customer's and is raised in week 1 |
-| B14 | Per-host accepted rate (F-10) | risky / unknown | week 1 (measured); negotiation open-ended | 1 / 5 / 10 req/s probes per host; anything above is a commercial agreement, not engineering |
+| B14 | Per-host accepted rate (the assumed 10 requests a second per host) | risky / unknown | week 1 (measured); negotiation open-ended | 1 / 5 / 10 req/s probes per host; anything above is a commercial agreement, not engineering |
 | B15 | JavaScript-only share on target hosts (Part 2 Appendix A decision 13) | risky / unknown | week 1 | detector on the Run A sample; > 10% triggers a separately funded rendering workstream |
 | B16 | Egress IP reputation (decision 11) | risky / unknown | week 4 | block rate by egress IP during Run B; reverses to NAT with Elastic IPs if a host requires an allow-list |
 | B17 | Classification and topic quality | risky / unknown | week 5 | the labelled set in §5; unmeasured until it exists |
 | B18 | Legal and terms-of-service position: crawling hosts that disallow it, and probing hosts with a browser User-Agent | risky / unknown | **entry gate for phase 0**; owner: customer counsel or ours, named before day 1 | a written position before any browser-User-Agent probe; engineering enforces `robots_state` either way |
+| B19 | Frontier refill latency on a 1.2 TB table at 1M hosts (Part 2 Appendix A, decision 3) | risky / unknown | week 4 | Run B; if top-k refill cannot sustain the release rate, back-queue heads are pre-materialised by a batch job |
 | B20 | AWS Spot vCPU quota (Run B needs ~800 vCPUs; production ~4,000) | known / trivial, external | filed day 1; days to weeks | quota increase request; run smaller until granted |
 | B21 | Customer MySQL access: replica, network path, credentials | known / trivial, external | week 1 | customer provisions; ingest from file until then |
 | B22 | PoC infrastructure budget (~$15–20k over ten weeks at list prices) | known / trivial, external | before phase 1 | approval by the budget owner named in the phase-0 gate |
@@ -55,9 +55,9 @@ Ten calendar weeks to a single-region system ready for a staged release. Each ph
 
 | Phase | Weeks | Delivers | De-risks | Exit gate |
 |---|---|---|---|---|
-| **0 — Measure** | 1 | Run A sample of 10,000 pages on the three hosts: page sizes, block rate, `robots_state`, JS-only share, rate probes; parse CPU on c7g; cost model re-run | B8, B9, B13, B14, B15 | measured values for N-03, N-05b, F-10 per host; cost model revised and re-approved if any line moved > 50%; the anti-bot policy question raised with its owner |
+| **0 — Measure** | 1 | Run A sample of 10,000 pages on the three hosts: page sizes, block rate, `robots_state`, JS-only share, rate probes; parse CPU on c7g; cost model re-run | B8, B9, B13, B14, B15 | measured values for page size, parse cost, accepted rate per host; cost model revised and re-approved if any line moved > 50%; the anti-bot policy question raised with its owner |
 | **1 — Pipeline** | 2–3 | ingest (file + MySQL), frontier table and back queues, SQS, worker fleet, raw-object writer, ClickHouse schema; single region, fixed fleet size | B1–B6; that the components fit together | 10,000 URLs end to end; for every URL the `page_fetch` row and a Part 1 CLI run within the same hour agree on `status`, `reason`, `robots_state`, `http_status`, `title` and `page_type` (body and word count are compared only for hosts that do not serve per-fetch variants; Amazon does — README) ; a killed worker loses no URL |
-| **2 — Scale runs** | 4–6 | Run A full (1M URLs, two cycles); Run B (1M URLs, ≥ 10,000 hosts); ClickHouse insert tuning; monitoring wired | B7, B10, B11, B16, B19 | §5 throughput, cost and coverage rows measured; cost per million within 30% of the revised model or explained |
+| **2 — Scale runs** | 4–6 | Run A full (1M URLs, two cycles); Run B (25M URLs, ≥ 10,000 hosts, plus the synthetic frontier and insert loads); ClickHouse insert tuning; monitoring wired | B7, B10, B11, B16, B19 | §5 throughput, cost and coverage rows measured; cost per million within 30% of the revised model or explained |
 | **3 — Serving** | 7 | read API, Redis cache, CDN; point lookup and month/domain scan; load test | B12 | p95 < 200 ms cached and < 1 s on miss at 250 req/s for 1 h with inserts running; p99 on miss recorded against the 100 ms KV threshold |
 | **4 — Hardening** | 8–10 | autoscaling, failure injection, runbooks, alerting review, canary path, on-call rota | operability by people who did not build it | §5 operations rows pass; runbooks executed by a non-author; rollback rehearsed |
 
@@ -103,7 +103,7 @@ Topic relevance carries the loosest threshold because the extractor is unsupervi
 | Metric | Pass | Method |
 |---|---|---|
 | Sustained fetch rate | ≥ 1,000 URLs/s for 6 h on a fleet of ≤ 70 instances (1,000 × 0.75 s / 16 ≈ 47 at full utilisation; 67 at the 70% the design runs) | fleet metrics; 25M URLs is about 7 h at that rate |
-| Parse CPU per page on c7g | measured; replaces N-05b | in-fleet profiling, n ≥ 10,000 |
+| Parse CPU per page on c7g | measured; replaces the parse-cost assumption | in-fleet profiling, n ≥ 10,000 |
 | Unit costs per line (instance-hours, PUTs, bytes stored) | measured and written back into the ledger; no percentage gate at PoC scale, where Spot price noise exceeds it | Cost Explorer on tagged resources |
 | ClickHouse parts per partition; insert lag | < 300 parts; lag < 5 min at 3,858 rows/s from the synthetic inserter | system tables |
 
@@ -114,9 +114,9 @@ Topic relevance carries the loosest threshold because the extractor is unsupervi
 | Accepted rate per host | measured at 1 / 5 / 10 req/s; no target | 429 and 403 rate per probe level |
 | Block rate per host | **measured, no target** | `blocked` / fetched, by `reason`; plus `no_content` hosts whose browser-User-Agent probe succeeds |
 | Error rate per host | < 0.5% excluding blocked | `error` / fetched, by `reason` |
-| Unchanged rate on cycle 2, per host | measured; replaces the 60% upper bound in N-17 | raw-body `content_hash` equality; hosts serving per-fetch variants are reported separately |
+| Unchanged rate on cycle 2, per host | measured; replaces the 60% upper bound in the cost model | raw-body `content_hash` equality; hosts serving per-fetch variants are reported separately |
 | JS-only share per host | measured; > 10% triggers Part 2 Appendix A decision 13's rendering workstream | detector on the sample |
-| Page-size distribution | measured p50 / p90 / p99; replaces N-03 | response sizes |
+| Page-size distribution | measured p50 / p90 / p99; replaces the page-size assumption | response sizes |
 
 Block rate has no target on purpose: a target creates pressure to defeat bot detection. It is reported.
 
@@ -178,7 +178,7 @@ One primary, one secondary, weekly rotation across the two engineers plus one ad
 Ranked by how much the design changes if the finding is adverse (mirrors Part 2 §9):
 
 1. Settle the per-host rate and the anti-bot policy with the customer (B13, B14); everything promised in the few-domain regime follows from these.
-2. Re-run the cost model with measured N-03, N-05b and N-17 and re-approve the budget.
+2. Re-run the cost model with measured page size, parse cost and unchanged rate and re-approve the budget.
 3. Decide the JS-rendering workstream from the measured share (B15).
 4. Decide the KV summary tier from the measured point-lookup p99 (B12).
 5. Run the fair columnar-vs-row comparison on target hardware (Part 2 §9 item 8) before quoting any multiple.

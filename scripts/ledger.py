@@ -6,6 +6,7 @@ Run:  python scripts/ledger.py            -> markdown table
       python scripts/ledger.py --regime few -> few-domain regime table
 """
 
+import math
 import pathlib
 import re
 import sys
@@ -78,10 +79,16 @@ class Row:
 
 
 def money(x: float) -> str:
-    x = round(x, 2)
-    if x >= 100 or float(x).is_integer():
-        return f"${x:,.0f}"
-    return f"${x:,.2f}"
+    """Two significant figures: these are estimates, and cents would claim a precision they lack."""
+    if x == 0:
+        return "$0"
+    digits = int(math.floor(math.log10(abs(x))))
+    rounded = round(x, 1 - digits)
+    if rounded >= 100:
+        return f"${rounded:,.0f}"
+    if rounded >= 10:
+        return f"${rounded:.0f}"
+    return f"${rounded:.2g}" if rounded < 1 else f"${rounded:.1f}"
 
 
 def s3_stock_bill(gb_per_month: float, months: int) -> float:
