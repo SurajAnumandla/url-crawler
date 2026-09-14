@@ -82,25 +82,21 @@ Memory is not a constraint: a worker process uses about 400 MB after a parse, so
 
 ### 4.2 The frontier
 
-The frontier is where URLs wait. It is a table in Aurora PostgreSQL, partitioned by host, with one row per URL: host, URL, its hash, the customer's weight for it, when it is next due, and when it was last released. It is about 1.2 TB for 10 billion rows.
+The frontier is a table in Aurora PostgreSQL, partitioned by host, with one row per waiting URL: host, URL hash, the customer's weight, when it is next due, and when it was last released. About 1.2 TB for 10 billion rows.
 
-Why a table and not a queue: the order URLs should be fetched in changes over time. A page that changed last time should come back sooner; a page that has not changed in months can wait. A queue is fixed once written. A table lets the order be a query: "for this host, the URLs that are due, most valuable first". The due date is written once per fetch, so nothing is rewritten in bulk; priority is computed at query time from the stored weight and due date.
+A table rather than a queue because the fetch order changes over time: a page that changed last time should come back sooner, one that has not changed in months can wait. A queue is fixed once written; a table makes the order a query, "for this host, the URLs that are due, most valuable first". The due date is written once per fetch, so nothing is rewritten in bulk.
 
-Why the in-memory per-host queues in front of it: a database cannot be queried 3,900 times a second for "next URL for this host". So the scheduler pulls a few hundred URLs per host at a time into Redis, and releases from there. Redis also holds each host's rate limiter, a token bucket refilled at the host's permitted rate. Both are rebuildable from the table, so losing Redis loses no URLs: anything released more than an hour ago without a result is released again, and fetching a URL twice is harmless.
+A database cannot answer "next URL for this host" 3,900 times a second, so the scheduler pulls a few hundred URLs per host at a time into a short Redis queue and releases from there. Redis also holds each host's rate limiter. Both are rebuildable from the table, so losing Redis loses no URLs: anything released over an hour ago without a result is released again, and a repeated fetch is harmless. Each host's queue holds at most ten minutes of its rate, so a million hosts fit in a few gigabytes.
 
-The per-host queue is kept short, at most ten minutes of that host's rate, so a million hosts hold a few gigabytes in total, not a hundred.
-
-This is the URL-frontier pattern from Alex Xu's *System Design Interview* (vol. 1, ch. 9): a prioritiser, priority-ordered front queues, one back queue per host for politeness, and a selector, with most of the frontier on disk and only the heads in memory. The one deliberate difference is that the disk tier is a table rather than files, so priorities can change after loading.
+This is the URL-frontier pattern from Alex Xu's *System Design Interview* (vol. 1, ch. 9): prioritiser, priority-ordered front queues, one back queue per host, and a selector, with most of the frontier on disk and only the heads in memory. The one difference is a table instead of files for the disk tier, so priorities can change after loading.
 
 ### 4.3 Politeness
 
-Every host has a rate cap: its `robots.txt` crawl delay, a rate the customer negotiated with the site, or the default of 10 requests a second. The limiter enforces it at release, and the worker checks it again immediately before fetching, so a backlog in the transport queue cannot be drained onto one host in a burst. If a host answers 429 or starts failing, its rate is halved and recovers slowly. `robots.txt` is fetched once per host, cached for a day, and obeyed per URL. Blocks are recorded, never evaded: the crawler identifies itself and does not pretend to be a browser.
+Each host has a rate cap: its `robots.txt` crawl delay, a rate the customer negotiated, or a default of 10 requests a second. The limiter enforces it at release and the worker checks it again before fetching, so a backlog can never burst onto one host. A host that answers 429 or starts failing has its rate halved and recovers slowly. `robots.txt` is fetched once per host, cached for a day and obeyed per URL. Blocks are recorded, never evaded: the crawler identifies itself and does not pretend to be a browser.
 
 ### 4.4 Workers
 
-A worker server runs one process per core, each with its own event loop and a few fetches in flight. Fetching is waiting on the network and needs few connections; parsing holds the CPU for half a second. Measured on the fixture pages, running the parse in a thread keeps the event loop responsive and gives some parallelism, but not enough to change the sizing; one process per core is the safe unit. Each server also runs a local DNS cache, because 3,900 lookups a second across a million hosts would otherwise saturate the cloud resolver.
-
-Servers are Graviton Spot instances. Spot is about a third of the on-demand price, and a Spot interruption costs nothing here because every URL is an idempotent unit of work: fetch it again and you get the same row.
+A worker server runs one process per core, each with a few fetches in flight: fetching waits on the network, parsing holds a core for half a second, and one process per core is the safe unit. Each server runs a local DNS cache, because 3,900 lookups a second across a million hosts would saturate the cloud resolver. Servers are Graviton Spot instances at about a third of the on-demand price; an interruption costs nothing because every URL is an idempotent unit of work.
 
 ### 4.5 Storage
 
