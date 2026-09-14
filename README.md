@@ -130,7 +130,7 @@ Everything runs in-process; no third-party crawling, extraction or classificatio
 **Classification and topics are two outputs, produced by two methods.**
 
 - **`page_type`** is read from what the page declares, in order: JSON-LD `@type`, then Open Graph `og:type`, then product price markup, then URL shape as a last resort, else `other`. A page that was never fetched is `unknown`. Every label traces to one signal in the document.
-- **`topics`** come from YAKE, a single-document keyphrase extractor that scores phrases by position, frequency and context variety. TF-IDF is not used: its IDF term needs a corpus, and with one page it degenerates to term frequency. Phrases that appear in the title or an `h1` are boosted; near-duplicate phrases are dropped. The method is unsupervised — no taxonomy, no training data — so its quality is unmeasured until the labelled set in Part 3 §5 exists.
+- **`topics`** come from YAKE, a single-document keyphrase extractor that scores phrases by position, frequency and context variety. TF-IDF is not used: its IDF term needs a corpus, and with one page it degenerates to term frequency. Phrases that appear in the title or an `h1` are boosted; near-duplicate phrases are dropped. The method is unsupervised — no taxonomy, no training data — so its quality is unmeasured until the labelled set in Part 3 §2 exists.
 
 **`blocked` and `error` are kept apart.** A host refusing the crawler is a coverage fact; a timeout or a 5xx is a reliability fact. A robots.txt that answers 5xx is `error` / `robots_unavailable`, not a refusal. A 401, 403 or 451 is `blocked` / `forbidden`. A 404 is `error` / `not_found`, never a server error. Part 2's metrics and SLOs depend on this split.
 
