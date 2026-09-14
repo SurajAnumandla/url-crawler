@@ -72,7 +72,7 @@ Memory is not a constraint: a worker process uses about 400 MB after a parse, so
 
 ### 4.1 How a URL travels
 
-1. The list arrives as a file or a database table. Each URL is normalised and hashed; duplicates within the list are dropped by sorting; each URL is compared with what has already been crawled, given a priority, and loaded into the frontier.
+1. The list arrives as a text file on S3, read in parallel byte ranges, or as a MySQL table for the month, read from a replica in primary-key order so the source database is never scanned twice. Each URL is normalised and hashed; duplicates within the list are dropped by sorting; each URL is compared with what has already been crawled, given a priority, and loaded into the frontier.
 2. The scheduler pulls the next few hundred URLs, by priority, for each host that has budget into that host's short in-memory queue.
 3. It releases URLs from those queues onto the transport queue only as fast as each host's rate limiter permits, so the transport queue holds seconds of work, never a backlog for a host that is out of budget.
 4. A worker takes a URL, checks the host's limiter once more, fetches the page, runs the Part 1 pipeline, appends the raw HTML to its current output object and writes the metadata row.
