@@ -2,18 +2,16 @@
 
 ## Summary
 
-Part 1 is a service that takes one URL and returns the page's metadata, its type and its topics. Part 2 is how to run that same code over a customer's monthly list of billions of URLs, store what comes back, and serve it to millions of requests, at a cost that can be defended.
+Part 1 is a service that takes one URL and returns the page's metadata, type and topics. Part 2 runs that code over a customer's monthly list of billions of URLs, stores the results, and serves them to millions of requests.
 
-The design is a pipeline. The list is loaded once a month into a **frontier**: a table of every waiting URL with a priority. A **scheduler** releases URLs from the frontier only as fast as each website allows, so the crawler is never rude to a host. A fleet of **workers** runs the Part 1 code on each released URL. Raw HTML goes to object storage; the extracted metadata and body go to a column-oriented database that serves both the customer's queries and single-URL lookups.
+The design is a pipeline. The list is loaded once a month into a **frontier**, a table of every waiting URL with a priority. A **scheduler** releases URLs only as fast as each website allows. A fleet of **workers** runs the Part 1 code on each one. Raw HTML goes to object storage; metadata and extracted text go to a column-oriented database that serves both customer reports and single-URL lookups.
 
-Two facts shape everything else:
+Two facts shape the design:
 
-- **Which URLs you have decides what limits you.** If the billions of URLs are spread across a million websites, the limit is CPU for parsing and the design is about fleet size. If they are concentrated on three websites, as the brief's own example says, the limit is how fast those three sites will let you fetch, and no fleet size changes that. Then the design is about choosing which fraction of the list to spend the budget on.
-- **The parse is the cost.** Fetching a page waits on the network and costs almost nothing; reading it costs half a second of CPU. Every cost lever in this document is a way to parse fewer pages or parse them cheaper.
+- **The shape of the list decides the limit.** Billions of URLs spread over a million websites are limited by CPU for parsing, so the design is about fleet size. Billions concentrated on three websites, as in the brief's example, are limited by how fast those sites tolerate being fetched, and no fleet size changes that; the design is then about choosing which fraction of the list to spend the budget on.
+- **The parse is the cost.** Fetching waits on the network; reading a page costs half a second of CPU. Every cost lever here parses fewer pages or parses them cheaper.
 
-Rounded estimates, at 10 billion URLs a month across many sites: about 260 servers, about $84,000 a month at the start rising to about $120,000 by the second year as storage accumulates, roughly $8.4 per million URLs. For the three-site example the same machinery runs on two servers on a floor of about $2,000 a month, and fetches about 78 million pages a month per site until the sites agree to more. Every figure is a back-of-envelope estimate, rounded to two figures and good to about ±50% until the proof of concept measures page size, parse cost and how often pages change; the calculations are shown where they are used, and Appendix B lists every input and result.
-
----
+Rounded estimates at 10 billion URLs a month over many sites: about 260 servers, about $84,000 a month at first and about $120,000 by the second year as storage accumulates, roughly $8.4 per million URLs. For the three-site example the same machinery runs on two servers on a floor of about $2,000 a month and fetches about 78 million pages a month per site until the sites agree to more. All figures are back-of-envelope, rounded to two figures and good to about ±50% until the proof of concept measures page size, parse cost and how often pages change. Calculations are shown where used; Appendix B lists every input and result.
 
 ## 1. What the brief asks for
 
@@ -74,11 +72,11 @@ Memory is not a constraint: a worker process uses about 400 MB after a parse, so
 
 ### 4.1 How a URL travels
 
-1. The list arrives as a file or a database table. Each URL is normalised (lower-case host, tracking parameters removed) and hashed. Exact duplicates within the list are dropped by sorting. Each URL is compared with what has already been crawled to decide whether it needs fetching this month, and is given a priority. The result is loaded into the frontier table.
-2. The scheduler looks at hosts that have budget and pulls their next few hundred URLs by priority into that host's short in-memory queue.
-3. The scheduler releases URLs from those queues onto the transport queue, but only as many as each host's rate limiter permits. The transport queue therefore holds seconds of work, never a backlog for a host that is out of budget.
+1. The list arrives as a file or a database table. Each URL is normalised and hashed; duplicates within the list are dropped by sorting; each URL is compared with what has already been crawled, given a priority, and loaded into the frontier.
+2. The scheduler pulls the next few hundred URLs, by priority, for each host that has budget into that host's short in-memory queue.
+3. It releases URLs from those queues onto the transport queue only as fast as each host's rate limiter permits, so the transport queue holds seconds of work, never a backlog for a host that is out of budget.
 4. A worker takes a URL, checks the host's limiter once more, fetches the page, runs the Part 1 pipeline, appends the raw HTML to its current output object and writes the metadata row.
-5. If a page turns out to be blocked, empty or an error page, that is recorded as a row too. Nothing is silently dropped.
+5. A blocked, empty or error page is recorded as a row too. Nothing is silently dropped.
 
 ### 4.2 The frontier
 
@@ -128,27 +126,27 @@ Two ClickHouse tables carry it. `page_fetch` keeps every fetch, including blocke
 
 ### 4.6 Not fetching what you don't need
 
-Three separate questions, answered exactly and without a Bloom filter (a Bloom filter at 1% false positives would silently drop a hundred million URLs a month as "already seen"):
+Three questions, each answered exactly. A Bloom filter is not used: at 1% false positives it would silently drop a hundred million URLs a month as "already seen".
 
-- **Seen in this list?** Sort by hash at load time, drop neighbours.
+- **Seen in this list?** Sort by hash at load time and drop neighbours.
 - **Crawled before, and due again?** Join the list against `page_current` at load time.
-- **Changed since last time?** After the fetch, hash the raw bytes; if equal to last time, skip the parse and the write. This is the largest saving in the design, because the parse is the cost. Its size depends on how often pages actually change: the planning assumption is 60% unchanged, which would remove about 60% of compute, but Amazon served a different variant of the same product page on every one of three fetches, so for hosts like that the saving may be near zero. The proof of concept measures it per host.
+- **Changed since last time?** After the fetch, hash the raw bytes; if unchanged, skip the parse and the write. This is the largest saving because the parse is the cost. The planning assumption is 60% unchanged, but Amazon served a different variant of the same page on each of three fetches, so for hosts like that the saving may be near zero; the proof of concept measures it per host.
 
-**Choosing what to fetch when the budget is a fraction of the list** (the few-host case): each URL carries the customer's weight and a due date. The due interval starts from the page type (articles weekly, products monthly), halves when the *extracted* content changed and doubles when it did not, within one day to ninety. Release order is by weight then due date. New URLs and recrawls share the budget half and half by default so a large new list does not starve freshness. Fixed schedules such as "news hourly" are not used: at any budget they starve the rest of the host.
+**Choosing what to fetch when the budget is a fraction of the list** (the few-host case): each URL carries the customer's weight and a due date. The interval starts from the page type (articles weekly, products monthly), halves when the *extracted* content changed and doubles when it did not, between one day and ninety. Release order is weight, then due date. New URLs and recrawls share the budget half and half so a large new list does not starve freshness. Fixed schedules such as "news hourly" are not used; at any budget they starve the rest of the host.
 
 ### 4.7 Serving millions of requests
 
-Assume 10 million reads a day, about 120 a second, twice that at peak. Two kinds: a single-URL lookup and an analytical report. Both go to ClickHouse; a single-URL lookup on the sorted table reads one small block. A Redis cache in front takes 90% of repeats, and a CDN caches and terminates TLS at the edge. A separate key-value copy of every record was considered and rejected: writing 10 billion records of 10 KB into DynamoDB is 100 billion write units, about $120,000 a month, to serve roughly a dozen cache misses a second. If the measured lookup latency is unacceptable, a key-value tier of one-kilobyte summaries returns at a tenth of that cost.
+Assume 10 million reads a day, about 120 a second and twice that at peak: single-URL lookups and analytical reports. Both go to ClickHouse; a lookup on the sorted table reads one small block. A Redis cache takes 90% of repeats; a CDN caches at the edge and terminates TLS. A key-value copy of every record was rejected: 10 billion records of 10 KB into DynamoDB is 100 billion write units, about $120,000 a month, to serve roughly a dozen cache misses a second. If measured lookup latency proves unacceptable, a key-value tier of one-kilobyte summaries returns at a tenth of that.
 
-The API surface is small: `GET /pages/{url}` returns the latest row for one URL; `GET /hosts/{host}/pages?month=YYYY-MM` returns the rows for a host and month, paginated by URL hash; `GET /hosts/{host}/summary?month=` returns counts by status, reason and page type. Reads are authenticated by API key with a per-key rate limit at the API tier; the cache key includes the normalised URL, and a write to `page_current` invalidates it.
+API surface: `GET /pages/{url}` for one URL's latest row; `GET /hosts/{host}/pages?month=` for a host and month, paginated by URL hash; `GET /hosts/{host}/summary?month=` for counts by status, reason and page type. Reads carry an API key with a per-key rate limit; the cache key is the normalised URL, invalidated when `page_current` changes.
 
 ### 4.8 Pages that are not the page
 
-Three measured facts from the test URLs: Amazon served the product page; CNN served the article; REI answered 403 for the page and for `robots.txt`, while serving the page to a browser's User-Agent. Coverage therefore has to be measured per host, and the design keeps two things apart everywhere: **blocked** (the site refused) is a coverage number; **error** (something failed) is a reliability number.
+Measured on the test URLs: Amazon served the product page, CNN the article, and REI answered 403 for the page and for `robots.txt` while serving the page to a browser's User-Agent. So coverage is measured per host, and two things stay apart everywhere: **blocked** (the site refused) is a coverage number; **error** (something failed) is a reliability number.
 
-Some blocks are disguised. Myntra served a "Site Maintenance" page with a 200 to the crawler and the product page to a browser. The Part 1 code catches these generically: a 200 with almost no visible text and no metadata is reported as `no_content`. At fleet scale two more signals separate a disguised block from a real outage: the same content hash on many URLs of one host is a template page, and a browser-User-Agent probe that succeeds where the crawler failed is a block.
+Some blocks are disguised. Myntra served a "Site Maintenance" page with a 200 to the crawler and the product page to a browser. Part 1 catches these generically: a 200 with almost no visible text and no metadata is `no_content`. At fleet scale two more signals separate a disguised block from an outage: the same content hash on many URLs of one host is a template page, and a browser-User-Agent probe that succeeds where the crawler failed is a block.
 
-Pages that need JavaScript to render are excluded in the first version and counted: a sampled detector reports the share per host, and rendering, at roughly ten to twenty times the CPU of a static parse, is budgeted only if that share is material. SLAs are written in terms of fetchable pages and report the excluded counts.
+Pages that need JavaScript to render are excluded in the first version and counted per host; rendering, at ten to twenty times the CPU of a static parse, is budgeted only if that share is material. SLAs are written for fetchable pages and report the excluded counts.
 
 ## 5. When things fail
 
@@ -167,7 +165,7 @@ Everything is idempotent, so the answer to almost every failure is "do it again"
 
 Back-pressure always flows toward the frontier, the one place that can slow the system without losing anything.
 
-**Availability.** Everything stateful runs across three availability zones in one region: Aurora with a synchronous standby (failover in under a minute, no data loss), Redis with a replica per shard (its contents are rebuildable anyway), ClickHouse with two replicas of every part so one node can be lost without losing reads or writes, and S3 by construction. Workers and the read API are stateless and spread across zones. The 99.9% read objective in §6 rests on that layout plus the cache and CDN in front, which keep serving cached rows through a database failover. Recovery objectives: no data loss for the frontier and the fetch tables; a fetch in flight during a failure is fetched again. What this does not cover is the loss of a whole region; a second region is a later step (§9), and the residual risk is stated in the SLA.
+**Availability.** Stateful components run across three zones in one region: Aurora with a synchronous standby (failover under a minute, no data loss), Redis with a replica per shard (rebuildable anyway), ClickHouse with two replicas of every part, and S3 by construction. Workers and the API are stateless across zones. The 99.9% read objective in §6 rests on that layout plus the cache and CDN, which keep serving during a database failover. A fetch in flight during a failure is fetched again. Loss of a whole region is not covered: a second region is a later step (§9) and the residual risk is stated in the SLA.
 
 ## 6. Objectives and commitments
 
@@ -236,17 +234,15 @@ Prices are public list prices for us-east-1 as recalled at writing; every figure
 
 In the order that would change the design most if wrong:
 
-1. The request rate the target hosts accept, probed at 1, 5 and 10 a second. It decides the regime and everything promised.
-2. Page-size distribution. Storage and bandwidth scale with it directly.
-3. Parse cost on the real server type. It sets the fleet.
-4. How often pages are unchanged on recrawl, per host. It sets the largest saving.
-5. Block rate and JavaScript-only share per host. They set the coverage ceiling.
-6. ClickHouse behaviour at 3,900 inserts a second, and single-URL lookup latency under that load.
-7. Failover drills for Aurora, Redis and a ClickHouse replica under load, to confirm the availability layout behaves as described.
-8. Frontier refill latency at a million hosts on a 1.2 TB table, and the re-release path after a Redis failover.
-9. A fair column-store versus row-store comparison on real hardware before anyone quotes a speed multiple.
-
----
+1. The request rate the target hosts accept, probed at 1, 5 and 10 a second; it decides the regime and everything promised.
+2. Page-size distribution; storage and bandwidth scale with it.
+3. Parse cost on the real server type; it sets the fleet.
+4. How often pages are unchanged on recrawl, per host; it sets the largest saving.
+5. Block rate and JavaScript-only share per host; they set the coverage ceiling.
+6. ClickHouse at 3,900 inserts a second, and lookup latency under that load.
+7. Failover drills for Aurora, Redis and a ClickHouse replica under load.
+8. Frontier refill latency at a million hosts on a 1.2 TB table, and re-release after a Redis failover.
+9. A fair column-store versus row-store comparison on real hardware before quoting any speed multiple.
 
 ## Appendix A — Decisions and schema
 
