@@ -11,10 +11,7 @@ dist/
 .DS_Store
 .env
 
-# BrightEdge's own assignment brief — not ours to publish
-docs/brightedge-assignment-spec.md
-
-# working spec for the remediation pass
+# local working notes
 docs/spec.md
 docs/plan.md
 

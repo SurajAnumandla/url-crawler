@@ -35,8 +35,8 @@ async def test_missing_robots_means_allowed():
 
 @respx.mock
 async def test_unreachable_robots_is_not_a_refusal():
-    """Regression: a dead host used to be reported as robots_disallowed,
-    which inflates block rate with what are really connection errors."""
+    """A dead host is a connection error, not a refusal: reporting it as
+    robots_disallowed would inflate the block rate."""
     respx.get("https://x.test/robots.txt").mock(side_effect=httpx.ConnectError("down"))
     result = await check_robots("https://x.test/p")
     assert result.allowed is True

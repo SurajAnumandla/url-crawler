@@ -30,13 +30,13 @@ META_KB = 10                      # measured: compact JSON 9,609 / 6,064 B (docs
 META_COMPRESSION = 4.0            # assumed: column compression on text-heavy rows
 FETCH_LATENCY_S = 2.0             # assumed: mean fetch latency for Little's law
 PROC_RSS_MB = 400                 # measured: 352-379 MB RSS after one parse, n=1 each -> 400
-PAGES_PER_OBJECT = 1_000          # decision DR-23
+PAGES_PER_OBJECT = 1_000          # Part 2 decision 6: 1,000 pages per raw object
 READS_PER_DAY = 10e6              # assumed: "millions of requests"
 CACHE_HIT = 0.9                   # assumed
 DEDUP_UNCHANGED = 0.6             # assumed until PoC cycle 2
 URL_BYTES = 80                    # assumed mean URL length
 
-# prices: assumed us-east-1 list prices as recalled; verify before publishing
+# prices: assumed us-east-1 list prices
 P_CORE_H = 0.02                   # Graviton spot, per vCPU-hour
 P_S3_STD, P_S3_IA, P_S3_DA = 0.023, 0.0125, 0.00099   # per GB-month
 P_S3_PUT = 0.005 / 1_000
@@ -46,7 +46,7 @@ P_SQS_M = 0.40
 P_DDB_WRU_M = 1.25
 P_DDB_GB = 0.25
 P_GP3_GB = 0.08
-P_EFS_GB = 0.30                   # rejected alternative in DR-12
+P_EFS_GB = 0.30                   # rejected alternative in Part 2 decision 5
 P_LAMBDA_GBS = 0.0000166667
 P_LAMBDA_REQ_M = 0.20
 # fixed monthly floor for the few-domain regime (assumed list prices, on-demand)
