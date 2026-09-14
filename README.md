@@ -112,7 +112,7 @@ URL → robots → download → CAPTCHA check → parse → classify → content
 | `__main__.py`, `app.py` | the CLI and the API — thin doors onto `service_crawl` |
 | `home.py`, `templates/home.html` | the landing page served at `/home` |
 
-Everything runs in-process; no third-party crawling, extraction or classification service is called. Each choice below names what it was chosen over and the property that disqualified the alternative; the decisions for the scaled system are in Part 2 Appendix A.
+Everything runs in-process; no third-party crawling, extraction or classification service is called. Each choice below names what it was chosen over and the property that disqualified the alternative; the decisions for the scaled system are in Part 2 §10.
 
 | Choice | Chosen | Rejected — disqualifying property |
 |---|---|---|

@@ -53,18 +53,8 @@ def chrome() -> str:
     raise SystemExit("No Chrome/Chromium found; set CHROME_BIN to the browser binary.")
 
 
-PDF_CUT = "## Appendix B"
-PDF_CUT_NOTE = (
-    "## Appendix B — The numbers\n\nThe full number ledger (every measured, assumed and derived "
-    "value with its working) is Appendix B of `docs/part2-scale-design.md` in the repository, "
-    "generated and checked by `scripts/ledger.py`. It is omitted from the PDF for length.\n"
-)
-
-
 def render(src: pathlib.Path, dst: pathlib.Path, browser: str) -> None:
     text = src.read_text()
-    if PDF_CUT in text:
-        text = text[: text.index(PDF_CUT)] + PDF_CUT_NOTE
     html_body = markdown.markdown(text, extensions=["tables", "fenced_code", "sane_lists"])
     page = (
         "<!doctype html><html><head><meta charset='utf-8'>"
