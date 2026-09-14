@@ -12,6 +12,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from crawler import __version__
 from crawler.home import render_home
 from crawler.logging import log, setup_logging
+from crawler.middleware import log_requests
 from crawler.model import CrawlResult, Reason, Status
 from crawler.service_crawl import crawl_url
 from crawler.service_download import make_client
@@ -34,6 +35,7 @@ app = FastAPI(
     description="Extract metadata, page type and topics from any URL",
     lifespan=lifespan,
 )
+app.middleware("http")(log_requests)
 
 
 _HOME = render_home()

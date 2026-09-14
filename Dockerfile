@@ -17,7 +17,8 @@ COPY --from=builder /opt/venv /opt/venv
 
 ENV PATH="/opt/venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1
+    PYTHONDONTWRITEBYTECODE=1 \
+    CRAWLER_LOG_DIR=/home/crawler/logs
 
 USER crawler
 EXPOSE 8000

@@ -34,7 +34,7 @@ docker run -p 8000:8000 crawler
 ## Tests
 
 ```bash
-make test        # pytest — 96 tests, offline against saved HTML fixtures
+make test        # pytest — 98 tests, offline against saved HTML fixtures
 make check       # ruff + mypy --strict + pytest
 ```
 
@@ -182,6 +182,10 @@ Results depend on the requesting network as much as on the site, which is why Pa
 
 One URL at a time, fetching is I/O-bound and parsing is the CPU cost (measured 500 ms per page). At billions of URLs per month the parse sets the fleet size, one process per core is the deployment unit, per-host request rate becomes the ceiling when the input is concentrated on a few domains, and storage is a stock that accumulates. The design, with every number labelled and derived by `scripts/ledger.py`, is [`deliverables/WebCrawler_scaling.pdf`](deliverables/WebCrawler_scaling.pdf); the path to a proof of concept and a release is [`deliverables/WebCrawler_poc_and_delivery.pdf`](deliverables/WebCrawler_poc_and_delivery.pdf).
 
+## Logs
+
+Every event is one JSON line with `timestamp` (UTC, ISO 8601), `level` and `event`. Two destinations: standard output, which Cloud Run forwards to Cloud Logging, and a daily file `logs/<container-name>-YYYY-MM-DD.log` that starts fresh at midnight UTC (on Cloud Run that folder is in-memory and vanishes when an instance stops; Cloud Logging is the durable copy). Each HTTP request produces one `http.request` line with method, path, query, client address, all request headers, the body (first 4 KB), response status and duration; `Authorization`, `Cookie` and similar credential headers are logged as `[redacted]`. Each crawl produces one terminal event (`crawl.ok`, `crawl.blocked`, `crawl.failed`) with the URL, reason, robots state and HTTP status; faults carry a full traceback.
+
 ## Configuration
 
 Every setting is an environment variable.
@@ -200,6 +204,8 @@ Every setting is an environment variable.
 | `CRAWLER_ROBOTS_CACHE_TTL_SECONDS` | `86400` | |
 | `CRAWLER_ROBOTS_UNAVAILABLE_TTL_SECONDS` | `300` | re-check a 5xx or unreachable host |
 | `CRAWLER_MAX_TOPICS` | `10` | |
+| `CRAWLER_LOG_DIR` | `logs` | folder for daily log files; stdout is always on |
+| `CRAWLER_LOG_NAME` | container hostname | file name prefix: `<name>-YYYY-MM-DD.log` |
 | `CRAWLER_REPO_URL` | empty | link to the public repository on the landing page; omitted when empty |
 | `CRAWLER_AUTHOR_LINE` | name and purpose | byline on the landing page |
 

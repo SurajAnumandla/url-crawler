@@ -14,3 +14,6 @@ Makefile
 .DS_Store
 deliverables/
 scripts/
+
+# runtime logs
+logs/

@@ -21,3 +21,6 @@ docs/plan.md
 # Firebase CLI local artefacts
 firebase-debug.log
 .firebase/
+
+# runtime logs
+logs/

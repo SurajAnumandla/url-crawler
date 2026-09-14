@@ -27,6 +27,10 @@ class Settings(BaseSettings):
     # topics
     max_topics: int = 10
 
+    # logging
+    log_dir: str = "logs"     # daily files <log_name>-YYYY-MM-DD.log; stdout always on
+    log_name: str = ""        # defaults to the container hostname
+
     # landing page
     repo_url: str = ""   # link to the public repository once it exists; empty = no link
     author_line: str = "Suraj Anumandla · BrightEdge Engineering Assignment · September 2026"
